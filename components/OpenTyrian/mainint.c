@@ -1849,7 +1849,13 @@ bool read_demo_keys( void )
 {
 	demo_keys = next_demo_keys;
 
-	efread(&demo_keys_wait, sizeof(Uint16), 1, demo_file);
+	/* A plain read, not efread(): a demo ends by reading past the end of its
+	 * recording, which efread() treats as a broken file and halts on.  This
+	 * is how upstream reads it too - there, on this byte order, efread() is
+	 * fread() - and it was the attract loop stopping the game at the end of
+	 * demo.4, whose recording runs out before its level does. */
+	demo_keys_wait = 0;
+	vfs_read(&demo_keys_wait, sizeof(Uint16), 1, demo_file);
 	demo_keys_wait = SDL_Swap16(demo_keys_wait);
 
 	next_demo_keys = efgetc(demo_file);
