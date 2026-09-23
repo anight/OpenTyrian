@@ -27,7 +27,7 @@ JE_word lvlNum;
 
 void JE_analyzeLevel( void )
 {
-	FILE *f = dir_fopen_die(data_dir(), levelFile, "rb");
+	VFILE *f = dir_fopen_die(data_dir(), levelFile, "rb");
 	
 	efread(&lvlNum, sizeof(JE_word), 1, f);
 	

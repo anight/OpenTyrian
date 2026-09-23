@@ -26,7 +26,7 @@ void JE_loadPCX( const char *file ) // this is only meant to load tshp2.pcx
 {
 	Uint8 *s = (Uint8 *)VGAScreen->pixels; /* 8-bit specific */
 	
-	FILE *f = dir_fopen_die(data_dir(), file, "rb");
+	VFILE *f = dir_fopen_die(data_dir(), file, "rb");
 	
 	efseek(f, -769, SEEK_END);
 	

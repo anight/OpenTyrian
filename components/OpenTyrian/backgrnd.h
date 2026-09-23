@@ -22,12 +22,16 @@
 #include "opentyr.h"
 
 #include <stdint.h>
-#include "SDL3/SDL.h"
+#include "SDL.h"
 
 extern JE_word backPos, backPos2, backPos3;
 extern JE_word backMove, backMove2, backMove3;
 extern JE_word mapX, mapY, mapX2, mapX3, mapY2, mapY3;
-extern JE_byte **mapYPos, **mapY2Pos, **mapY3Pos;
+extern const JE_byte *mapYPos, *mapY2Pos, *mapY3Pos;
+
+/* Per layer, where each tile number's pixels are: in the level's tile set, in
+ * flash, or NULL for a tile that is not drawn. */
+extern const JE_byte *mapTiles[3][256];
 extern JE_word mapXPos, oldMapXOfs, mapXOfs, mapX2Ofs, mapX2Pos, mapX3Pos, oldMapX3Ofs, mapX3Ofs, tempMapXOfs;
 extern intptr_t mapXbpPos, mapX2bpPos, mapX3bpPos;
 extern JE_byte map1YDelay, map1YDelayMax, map2YDelay, map2YDelayMax;
@@ -38,8 +42,8 @@ extern int starfield_speed;
 
 void JE_darkenBackground( JE_word neat );
 
-void blit_background_row( SDL_Surface *surface, int x, int y, Uint8 **map );
-void blit_background_row_blend( SDL_Surface *surface, int x, int y, Uint8 **map );
+void blit_background_row( SDL_Surface *surface, int x, int y, const Uint8 *map, const Uint8 *const *tiles );
+void blit_background_row_blend( SDL_Surface *surface, int x, int y, const Uint8 *map, const Uint8 *const *tiles );
 
 void draw_background_1( SDL_Surface *surface );
 void draw_background_2( SDL_Surface *surface );

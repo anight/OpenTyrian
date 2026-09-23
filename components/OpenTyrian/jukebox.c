@@ -84,7 +84,7 @@ void jukebox( void )
 
 		setdelay(1);
 
-		SDL_FillSurfaceRect(VGAScreenSeg, NULL, 0);
+		SDL_FillRect(VGAScreenSeg, NULL, 0);
 
 		// starlib input needs to be rewritten
 		JE_starlib_main();

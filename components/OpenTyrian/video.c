@@ -16,278 +16,89 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
-#include "keyboard.h"
 #include "opentyr.h"
-#include "palette.h"
 #include "video.h"
-#include "video_scale.h"
 
-#include <assert.h>
-#include <stdbool.h>
 #include <stdio.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-#include <time.h>  // Include for time functions
-
-// Define variables for FPS calculation
-static uint32_t frame_count = 0;
-static uint32_t start_time = 0;
-
-bool fullscreen_enabled = false;
+#include <stdlib.h>
+#include <string.h>
 
 SDL_Surface *VGAScreen, *VGAScreenSeg;
 SDL_Surface *VGAScreen2;
 SDL_Surface *game_screen;
 
-SDL_Window *window = NULL;
-SDL_Renderer *renderer= NULL;
+/*
+ * The three 320x200 screens the game draws with, 187.5 KB together and most of
+ * the RAM the port spends.  All three are live during play - game_screen is
+ * where the play field is drawn, VGAScreen2 holds the background layer and
+ * VGAScreenSeg is the frame with the sidebar - so none can be folded into
+ * another.
+ *
+ * picosdl allocates no pixels: these are ours, and the library wraps them.
+ */
+static Uint8 screen_pixels[3][vga_width * vga_height];
 
-static ScalerFunction scaler_function;
-
-// int scale_factor = 1;
-
-void clear_screen(SDL_Renderer *renderer) {
-    SDL_SetRenderDrawColor(renderer, 88, 66, 255, 255);
-    SDL_RenderClear(renderer);
-}
+static SDL_Window *window;
 
 void init_video( void )
 {
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) == false) {
-        printf("Unable to initialize SDL: %s\n", SDL_GetError());
-        return;
-    }
-    printf("SDL initialized successfully\n");
-
-	window = SDL_CreateWindow("SDL on ESP32", 320, 200, 0);
-	if (!window) {
-		printf("Failed to create window: %s\n", SDL_GetError());
-		return;
-	}
-
-	renderer = SDL_CreateRenderer(window, NULL);
-	if (!renderer) {
-		printf("Failed to create renderer: %s\n", SDL_GetError());
-		SDL_DestroyWindow(window);
-		return;
-	}
-
-	clear_screen(renderer);
-	SDL_RenderPresent(renderer);
-
-
-	// SDL_WM_SetCaption("OpenTyrian", NULL);
-//heap_caps_check_integrity_all(true);
-	// VGAScreen = VGAScreenSeg = SDL_CreateSurface(vga_width, vga_height, SDL_PIXELFORMAT_RGB565);
-	// VGAScreen2 = SDL_CreateSurface(vga_width, vga_height, SDL_PIXELFORMAT_RGB565);
-	// game_screen = SDL_CreateSurface(vga_width, vga_height, SDL_PIXELFORMAT_RGB565);
-
-	VGAScreen = VGAScreenSeg = SDL_CreateSurface(vga_width, vga_height, SDL_PIXELFORMAT_INDEX8);
-	VGAScreen2 = SDL_CreateSurface(vga_width, vga_height, SDL_PIXELFORMAT_INDEX8);
-	game_screen = SDL_CreateSurface(vga_width, vga_height, SDL_PIXELFORMAT_INDEX8);
-
-	palette = SDL_CreatePalette(256);
-
-	SDL_SetSurfacePalette(VGAScreen, palette);      // Set the palette for VGAScreen
-	SDL_SetSurfacePalette(VGAScreen2, palette);     // Set the same palette for VGAScreen2
-	SDL_SetSurfacePalette(game_screen, palette);
-
-// printf("BPP: %d\n", VGAScreen->format->BitsPerPixel);
-	// spi_lcd_clear();
-	SDL_FillSurfaceRect(VGAScreen, NULL, 0);
-//heap_caps_check_integrity_all(true);
-/*
-	if (!init_scaler(scaler, fullscreen_enabled) &&  // try desired scaler and desired fullscreen state
-	    !init_any_scaler(fullscreen_enabled) &&      // try any scaler in desired fullscreen state
-	    !init_any_scaler(!fullscreen_enabled))       // try any scaler in other fullscreen state
+	if (SDL_Init(SDL_INIT_VIDEO) != 0)
 	{
-		fprintf(stderr, "error: failed to initialize any supported video mode\n");
+		fprintf(stderr, "error: failed to initialize SDL video: %s\n", SDL_GetError());
 		exit(EXIT_FAILURE);
 	}
-	*/
-}
 
-int can_init_scaler( unsigned int new_scaler, bool fullscreen )
-{
-	if (new_scaler >= scalers_count)
-		return false;
+	window = PSDL_CreateWindow(screen_pixels[0], vga_width, vga_height, vga_width);
+	VGAScreen = VGAScreenSeg = SDL_GetWindowSurface(window);
 
-	int w = scalers[new_scaler].width,
-	    h = scalers[new_scaler].height;
-	// int flags = SDL_SWSURFACE | SDL_HWPALETTE | (fullscreen ? SDL_FULLSCREEN : 0);
+	VGAScreen2 = SDL_CreateRGBSurfaceFrom(screen_pixels[1], vga_width, vga_height, 8, vga_width, 0, 0, 0, 0);
+	game_screen = SDL_CreateRGBSurfaceFrom(screen_pixels[2], vga_width, vga_height, 8, vga_width, 0, 0, 0, 0);
 
-	int flags = 0;
-	// test each bitdepth
-	for (uint bpp = 32; bpp > 0; bpp -= 8)
+	if (VGAScreen == NULL || VGAScreen2 == NULL || game_screen == NULL)
 	{
-		// uint temp_bpp = SDL_VideoModeOK(w, h, bpp, flags);
-		uint temp_bpp = 8;
-
-    if ((temp_bpp == 32 && scalers[new_scaler].scaler32) ||
-		    (temp_bpp == 16 && scalers[new_scaler].scaler16) ||
-		    (temp_bpp == 8  && scalers[new_scaler].scaler8 ))
-		{
-			return temp_bpp;
-		}
-		else if (temp_bpp == 24 && scalers[new_scaler].scaler32)
-		{
-			// scalers don't support 24 bpp because it's a pain
-			// so let SDL handle the conversion
-			return 32;
-		}
+		fprintf(stderr, "error: failed to create the screen surfaces: %s\n", SDL_GetError());
+		exit(EXIT_FAILURE);
 	}
 
-	return 0;
-}
-
-
-bool init_scaler( unsigned int new_scaler, bool fullscreen )
-{
-	int w = scalers[new_scaler].width,
-	    h = scalers[new_scaler].height;
-	// int bpp = can_init_scaler(new_scaler, fullscreen);
-	int bpp = 8;
-	// int flags = SDL_SWSURFACE | SDL_HWPALETTE | (fullscreen ? SDL_FULLSCREEN : 0);
-	int flags = 0;
-	
-	if (bpp == 0)
-		return false;
-	
-	// SDL_Surface *const surface = SDL_SetVideoMode(w, h, bpp, flags);
-
-
-	
-	// if (surface == NULL)
-	// {
-	// 	fprintf(stderr, "error: failed to initialize %s video mode %dx%dx%d: %s\n", fullscreen ? "fullscreen" : "windowed", w, h, bpp, SDL_GetError());
-	// 	return false;
-	// }
-	
-	// w = surface->w;
-	// h = surface->h;
-	// // bpp = surface->BitsPerPixel;
-	// bpp = 8;
-	
-	// printf("initialized video: %dx%dx%d %s\n", w, h, bpp, fullscreen ? "fullscreen" : "windowed");
-	
-	scaler = new_scaler;
-	fullscreen_enabled = fullscreen;
-	
-	switch (bpp)
-	{
-	case 32:
-		scaler_function = scalers[scaler].scaler32;
-		break;
-	case 16:
-		scaler_function = scalers[scaler].scaler16;
-		break;
-	case 8:
-		scaler_function = scalers[scaler].scaler8;
-		break;
-	default:
-		scaler_function = NULL;
-		break;
-	}
-	
-	if (scaler_function == NULL)
-	{
-		assert(false);
-		return false;
-	}
-	
-	input_grab(input_grab_enabled);
-	
-	JE_showVGA();
-	
-	return true;
-}
-
-bool can_init_any_scaler( bool fullscreen )
-{
-	for (int i = scalers_count - 1; i >= 0; --i)
-		if (can_init_scaler(i, fullscreen) != 0)
-			return true;
-	
-	return false;
-}
-
-bool init_any_scaler( bool fullscreen )
-{
-	// attempts all scalers from last to first
-	for (int i = scalers_count - 1; i >= 0; --i)
-		if (init_scaler(i, fullscreen))
-			return true;
-	
-	return false;
+	SDL_FillRect(VGAScreen, NULL, 0);
 }
 
 void deinit_video( void )
 {
-	SDL_DestroySurface(VGAScreenSeg);
-	SDL_DestroySurface(VGAScreen2);
-	SDL_DestroySurface(game_screen);
-	
-	SDL_QuitSubSystem(SDL_INIT_VIDEO);
+	SDL_FreeSurface(VGAScreen2);
+	SDL_FreeSurface(game_screen);
+	SDL_DestroyWindow(window);
+
+	SDL_Quit();
 }
 
 void JE_clr256( SDL_Surface * screen)
 {
 	memset(screen->pixels, 0, screen->pitch * screen->h);
 }
+
 void JE_showVGA( void ) { scale_and_flip(VGAScreen); }
 
-void scale_and_flip(SDL_Surface *src_surface)
+/*
+ * Whatever VGAScreen points at goes to the panel - it is not always the window
+ * surface, the game swaps it to game_screen or a scratch surface while it
+ * composes - so this presents the buffer rather than the window.
+ *
+ * The present is asynchronous and the game draws into the same buffer as soon
+ * as this returns, with no notion that the panel is still reading it.  So it
+ * waits for the transfer: correct, at the cost of the drawing that could have
+ * overlapped it.
+ */
+/* Something the firmware does once a frame, which the host build has nothing
+ * to do for: src/tyrian_main.c reports the stack from here. */
+__attribute__((weak)) void picotyrian_frame_hook( void )
 {
-    if (renderer == NULL) {
-        printf("Renderer is NULL, unable to draw\n");
-        return;
-    }
+}
 
-    // Convert the SDL_Surface to an SDL_Texture
-    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, src_surface);
-    if (!texture) {
-        SDL_Log("Failed to create texture: %s", SDL_GetError());
-        return;
-    }
+void scale_and_flip( SDL_Surface *src_surface )
+{
+	PSDL_PresentBuffer(src_surface->pixels, src_surface->w, src_surface->h, src_surface->pitch);
+	PSDL_PresentSync();
 
-    // Clear the renderer
-    SDL_RenderClear(renderer);
-
-    // Get the window dimensions
-    int window_width, window_height;
-    SDL_GetWindowSize(window, &window_width, &window_height);
-
-    // Define the destination rectangle for scaling
-    SDL_FRect dst_rect = { 0, 0, window_width, window_height };
-
-    // Copy the texture to the renderer, scaling it to fit the window
-    SDL_RenderTexture(renderer, texture, NULL, &dst_rect);
-
-    // Present the renderer (equivalent to SDL_Flip in SDL2)
-    SDL_RenderPresent(renderer);
-
-    // Cleanup: destroy the texture after rendering
-    SDL_DestroyTexture(texture);
-
-    // --- FPS Calculation ---
-    frame_count++;  // Increment the frame count
-    uint32_t current_time = SDL_GetTicks();  // Get current time in milliseconds
-
-    if (start_time == 0) {
-        // Initialize the start time for the first frame
-        start_time = current_time;
-    }
-
-    uint32_t elapsed_time = current_time - start_time;  // Calculate elapsed time in milliseconds
-
-    if (elapsed_time >= 5000) {  // If 5 seconds have passed
-        float fps = (frame_count / (elapsed_time / 1000.0f));  // Calculate FPS
-        printf("FPS: %.2f\n", fps);  // Print FPS to console
-
-        // Reset for next interval
-        frame_count = 0;
-        start_time = current_time;
-    }
+	picotyrian_frame_hook();
 }

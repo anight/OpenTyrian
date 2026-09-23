@@ -20,9 +20,8 @@
 #define JOYSTICK_H
 
 #include "opentyr.h"
-#include "config_file.h"
 
-#include "SDL3/SDL.h"
+#include "SDL.h"
 
 typedef enum
 {
@@ -79,15 +78,13 @@ bool joystick_analog_angle( int j, float *angle );
 void poll_joystick( int j );
 void poll_joysticks( void );
 
-void push_key(SDL_Keycode key);
+void push_key( SDL_Scancode key );
 void push_joysticks_as_keyboard( void );
 
 void init_joysticks( void );
 void deinit_joysticks( void );
 
 void reset_joystick_assignments( int j );
-bool load_joystick_assignments( Config* config, int j );
-bool save_joystick_assignments( Config* config, int j );
 
 void joystick_assignments_to_string( char *buffer, size_t buffer_len, const Joystick_assignment *assignments );
 

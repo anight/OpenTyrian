@@ -492,10 +492,10 @@ void JE_loadScreen( void )
 {
 	JE_boolean quit;
 	JE_byte sel, screen, min = 0, max = 0;
-	char *tempstr;
-	char *tempstr2;
-	JE_boolean mal_str = false;
-	int len;
+	/* The text is borrowed, never owned: the fork's version allocated and freed
+	 * strings here, one of them a byte short of its terminator. */
+	const char *tempstr;
+	char tempstr2[64];
 
 	tempstr = NULL;
 
@@ -545,11 +545,6 @@ void JE_loadScreen( void )
 			if (x == max)
 			{
 				/* Last line is return to main menu, not a save game */
-				if (mal_str)
-				{
-					free(tempstr);
-					mal_str = false;
-				}
 				tempstr = miscText[34 - 1];
 
 				if (x == sel) /* Highlight if selected */
@@ -568,18 +563,8 @@ void JE_loadScreen( void )
 
 				if (saveFiles[x - 1].level == 0) /* I think this means the save file is unused */
 				{
-					if (mal_str)
-					{
-						free(tempstr);
-						mal_str = false;
-					}
 					tempstr = miscText[3 - 1];
 				} else {
-					if (mal_str)
-					{
-						free(tempstr);
-						mal_str = false;
-					}
 					tempstr = saveFiles[x - 1].name;
 				}
 			}
@@ -591,26 +576,15 @@ void JE_loadScreen( void )
 			{
 				if (saveFiles[x - 1].level == 0)
 				{
-					if (mal_str)
-					{
-						free(tempstr);
-					}
-					tempstr = (char *)malloc(7);
-					mal_str = true;
-					strcpy(tempstr, "-----"); /* Unused save slot */
+					tempstr = "-----"; /* Unused save slot */
 				} else {
 					tempstr = saveFiles[x - 1].levelName;
-					tempstr2 = (char *)malloc(5 + strlen(miscTextB[2-1]));
-					sprintf(tempstr2, "%s %d", miscTextB[2-1], saveFiles[x - 1].episode);
+					snprintf(tempstr2, sizeof(tempstr2), "%s %d", miscTextB[2-1], saveFiles[x - 1].episode);
 					JE_textShade(VGAScreen, 250, tempY, tempstr2, 5, (temp2 % 16) - 8, FULL_SHADE);
-					free(tempstr2);
 				}
 
-				len = strlen(miscTextB[3-1]) + 2 + strlen(tempstr);
-				tempstr2 = (char *)malloc(len);
-				sprintf(tempstr2, "%s %s", miscTextB[3 - 1], tempstr);
+				snprintf(tempstr2, sizeof(tempstr2), "%s %s", miscTextB[3 - 1], tempstr);
 				JE_textShade(VGAScreen, 120, tempY, tempstr2, 5, (temp2 % 16) - 8, FULL_SHADE);
-				free(tempstr2);
 			}
 
 		}
@@ -1565,7 +1539,7 @@ void JE_highScoreCheck( void )
 						JE_textShade(VGAScreen, 60, 55, miscText[53], 11, 4, FULL_SHADE);
 					}
 
-					sprintf(buffer, "%s %ld", miscText[37], temp_score);
+					sprintf(buffer, "%s %ld", miscText[37], (long)temp_score);
 					JE_textShade(VGAScreen, 70, 70, buffer, 11, 4, FULL_SHADE);
 
 					do
@@ -1878,9 +1852,9 @@ bool read_demo_keys( void )
 	efread(&demo_keys_wait, sizeof(Uint16), 1, demo_file);
 	demo_keys_wait = SDL_Swap16(demo_keys_wait);
 
-	next_demo_keys = getc(demo_file);
+	next_demo_keys = efgetc(demo_file);
 
-	return !feof(demo_file);
+	return !efeof(demo_file);
 }
 
 /*Street Fighter codes*/
@@ -2019,8 +1993,8 @@ void JE_playCredits( void )
 	play_song(8);
 	
 	// load credits text
-	FILE *f = dir_fopen_die(data_dir(), "tyrian.cdt", "rb");
-	for (lines = 0; !feof(f) && lines < lines_max; ++lines)
+	VFILE *f = dir_fopen_die(data_dir(), "tyrian.cdt", "rb");
+	for (lines = 0; !efeof(f) && lines < lines_max; ++lines)
 	{
 		read_encrypted_pascal_string(credstr[lines], sizeof(credstr[lines]), f);
 	}
@@ -3994,7 +3968,7 @@ redo:
 					{
 						uint shot_i = (i == 0) ? SHOT_LEFT_SIDEKICK : SHOT_RIGHT_SIDEKICK;
 
-						JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
+						const JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
 
 						// fire/refill sidekick
 						if (this_option->wport > 0)
@@ -4072,7 +4046,7 @@ redo:
 	{
 		for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 		{
-			JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
+			const JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
 
 			if (this_option->option > 0)
 			{
@@ -4480,10 +4454,10 @@ void JE_playerCollide( Player *this_player, JE_byte playerNum_ )
 					{
 						this_player->cash += evalue;
 					}
-					JE_setupExplosion(enemy_screen_x, enemy[z].ey, 0, enemyDat[enemy[z].enemytype].explosiontype, true, false);
+					JE_setupExplosion(enemy_screen_x, enemy[z].ey, 0, enemy_dat(enemy[z].enemytype)->explosiontype, true, false);
 				}
 				else if (this_player->invulnerable_ticks == 0 && enemyAvail[z] == 0 &&
-				         (enemyDat[enemy[z].enemytype].explosiontype & 1) == 0) // explosiontype & 1 == 0: not ground enemy
+				         (enemy_dat(enemy[z].enemytype)->explosiontype & 1) == 0) // explosiontype & 1 == 0: not ground enemy
 				{
 					int armorleft = enemy[z].armorleft;
 					if (armorleft > damageRate)
@@ -4534,7 +4508,7 @@ void JE_playerCollide( Player *this_player, JE_byte playerNum_ )
 
 									enemyAvail[temp2] = 1;
 
-									if (enemyDat[enemy[temp2].enemytype].esize == 1)
+									if (enemy_dat(enemy[temp2].enemytype)->esize == 1)
 									{
 										JE_setupExplosionLarge(enemy[temp2].enemyground, enemy[temp2].explonum, enemy_screen_x, enemy[temp2].ey);
 										soundQueue[6] = S_EXPLOSION_9;

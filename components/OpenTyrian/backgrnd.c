@@ -34,7 +34,8 @@ JE_word backMove, backMove2, backMove3;
 
 /*Main Maps*/
 JE_word mapX, mapY, mapX2, mapX3, mapY2, mapY3;
-JE_byte **mapYPos, **mapY2Pos, **mapY3Pos;
+const JE_byte *mapYPos, *mapY2Pos, *mapY3Pos;
+const JE_byte *mapTiles[3][256];
 JE_word mapXPos, oldMapXOfs, mapXOfs, mapX2Ofs, mapX2Pos, mapX3Pos, oldMapX3Ofs, mapX3Ofs, tempMapXOfs;
 intptr_t mapXbpPos, mapX2bpPos, mapX3bpPos;
 JE_byte map1YDelay, map1YDelayMax, map2YDelay, map2YDelayMax;
@@ -61,7 +62,7 @@ void JE_darkenBackground( JE_word neat )  /* wild detail level */
 	}
 }
 
-void IRAM_ATTR blit_background_row( SDL_Surface *surface, int x, int y, Uint8 **map )
+void blit_background_row( SDL_Surface *surface, int x, int y, const Uint8 *map, const Uint8 *const *tiles )
 {
 	// assert(surface->BitsPerPixel == 8);
 	
@@ -80,7 +81,7 @@ void IRAM_ATTR blit_background_row( SDL_Surface *surface, int x, int y, Uint8 **
 		
 		for (int tile = 0; tile < 12; tile++)
 		{
-			Uint8 *data = *(map + tile);
+			const Uint8 *data = tiles[map[tile]];
 			
 			// no tile; skip tile
 			if (data == NULL)
@@ -107,7 +108,7 @@ void IRAM_ATTR blit_background_row( SDL_Surface *surface, int x, int y, Uint8 **
 	}
 }
 
-void IRAM_ATTR blit_background_row_blend( SDL_Surface *surface, int x, int y, Uint8 **map )
+void blit_background_row_blend( SDL_Surface *surface, int x, int y, const Uint8 *map, const Uint8 *const *tiles )
 {
 	// assert(surface->BitsPerPixel == 8);
 	
@@ -126,7 +127,7 @@ void IRAM_ATTR blit_background_row_blend( SDL_Surface *surface, int x, int y, Ui
 		
 		for (int tile = 0; tile < 12; tile++)
 		{
-			Uint8 *data = *(map + tile);
+			const Uint8 *data = tiles[map[tile]];
 			
 			// no tile; skip tile
 			if (data == NULL)
@@ -153,21 +154,21 @@ void IRAM_ATTR blit_background_row_blend( SDL_Surface *surface, int x, int y, Ui
 	}
 }
 
-void IRAM_ATTR draw_background_1( SDL_Surface *surface )
+void draw_background_1( SDL_Surface *surface )
 {
-	SDL_FillSurfaceRect(surface, NULL, 0);
+	SDL_FillRect(surface, NULL, 0);
 	
-	Uint8 **map = (Uint8 **)mapYPos + mapXbpPos - 12;
+	const Uint8 *map = mapYPos + mapXbpPos - 12;
 	
 	for (int i = -1; i < 7; i++)
 	{
-		blit_background_row(surface, mapXPos, (i * 28) + backPos, map);
+		blit_background_row(surface, mapXPos, (i * 28) + backPos, map, mapTiles[0]);
 		
 		map += 14;
 	}
 }
 
-void IRAM_ATTR draw_background_2( SDL_Surface *surface )
+void draw_background_2( SDL_Surface *surface )
 {
 	if (map2YDelayMax > 1 && backMove2 < 2)
 		backMove2 = (map2YDelay == 1) ? 1 : 0;
@@ -177,11 +178,11 @@ void IRAM_ATTR draw_background_2( SDL_Surface *surface )
 		// water effect combines background 1 and 2 by syncronizing the x coordinate
 		int x = smoothies[1] ? mapXPos : mapX2Pos;
 		
-		Uint8 **map = (Uint8 **)mapY2Pos + (smoothies[1] ? mapXbpPos : mapX2bpPos) - 12;
+		const Uint8 *map = mapY2Pos + (smoothies[1] ? mapXbpPos : mapX2bpPos) - 12;
 		
 		for (int i = -1; i < 7; i++)
 		{
-			blit_background_row(surface, x, (i * 28) + backPos2, map);
+			blit_background_row(surface, x, (i * 28) + backPos2, map, mapTiles[1]);
 			
 			map += 14;
 		}
@@ -203,16 +204,16 @@ void IRAM_ATTR draw_background_2( SDL_Surface *surface )
 	}
 }
 
-void IRAM_ATTR draw_background_2_blend( SDL_Surface *surface )
+void draw_background_2_blend( SDL_Surface *surface )
 {
 	if (map2YDelayMax > 1 && backMove2 < 2)
 		backMove2 = (map2YDelay == 1) ? 1 : 0;
 	
-	Uint8 **map = (Uint8 **)mapY2Pos + mapX2bpPos - 12;
+	const Uint8 *map = mapY2Pos + mapX2bpPos - 12;
 	
 	for (int i = -1; i < 7; i++)
 	{
-		blit_background_row_blend(surface, mapX2Pos, (i * 28) + backPos2, map);
+		blit_background_row_blend(surface, mapX2Pos, (i * 28) + backPos2, map, mapTiles[1]);
 		
 		map += 14;
 	}
@@ -233,7 +234,7 @@ void IRAM_ATTR draw_background_2_blend( SDL_Surface *surface )
 	}
 }
 
-void IRAM_ATTR draw_background_3( SDL_Surface *surface )
+void draw_background_3( SDL_Surface *surface )
 {
 	/* Movement of background */
 	backPos3 += backMove3;
@@ -245,11 +246,11 @@ void IRAM_ATTR draw_background_3( SDL_Surface *surface )
 		mapY3Pos -= 15;   /*Map Width*/
 	}
 	
-	Uint8 **map = (Uint8 **)mapY3Pos + mapX3bpPos - 12;
+	const Uint8 *map = mapY3Pos + mapX3bpPos - 12;
 	
 	for (int i = -1; i < 7; i++)
 	{
-		blit_background_row(surface, mapX3Pos, (i * 28) + backPos3, map);
+		blit_background_row(surface, mapX3Pos, (i * 28) + backPos3, map, mapTiles[2]);
 		
 		map += 15;
 	}

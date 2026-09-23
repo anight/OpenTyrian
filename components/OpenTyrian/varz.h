@@ -72,7 +72,7 @@ struct JE_SingleEnemyType
 	JE_shortint exrev, eyrev;
 	JE_integer  exccadd, eyccadd;
 	JE_byte     exccwmax, eyccwmax;
-	void       *enemydatofs;
+	const void *enemydatofs;
 	JE_boolean  edamaged;
 	JE_word     enemytype;
 	JE_byte     animin;
@@ -120,9 +120,15 @@ typedef JE_char JE_CharString[256]; /* [1..256] */
 //typedef JE_byte JE_Map1Buffer[24 * 28 * 13 * 4]; /* [1..24*28*13*4] */
 
 //typedef JE_byte ***JE_MapType;
-typedef JE_byte *JE_MapType[300][14]; /* [1..300, 1..14] */
-typedef JE_byte *JE_MapType2[600][14]; /* [1..600, 1..14] */
-typedef JE_byte *JE_MapType3[600][15]; /* [1..600, 1..15] */
+/*
+ * Each cell is a tile number, as the level file stores it, and mapTiles (in
+ * backgrnd.h) says where that tile's pixels are.  The game kept a pointer per
+ * cell instead; the byte is 64 KB less of the RAM this board does not have,
+ * and the renderer looks the tile up as it draws the row.
+ */
+typedef JE_byte JE_MapType[300][14]; /* [1..300, 1..14] */
+typedef JE_byte JE_MapType2[600][14]; /* [1..600, 1..14] */
+typedef JE_byte JE_MapType3[600][15]; /* [1..600, 1..15] */
 
 struct JE_EventRecType
 {
@@ -133,51 +139,24 @@ struct JE_EventRecType
 	JE_byte     eventdat4;
 };
 
-struct JE_MegaDataShapesType2_3
-{
-	JE_byte nothing[3]; /* [1..3] */
-	JE_byte fill;
-	JE_DanCShape sh;
-};
-
-struct JE_MegaDataShapesType1
-{
-	JE_DanCShape sh;
-};
-
+/*
+ * A level's three map layers.  The tiles are not copied: each map cell points
+ * into the tile set in flash, where it is blitted from, which is the 143 KB of
+ * RAM three arrays of 672-byte tiles would otherwise cost.
+ */
 struct JE_MegaDataType1
 {
 	JE_MapType mainmap;  //[300][14];
-	struct
-	{
-		JE_DanCShape sh;
-	} shapes[72]; /* [0..71] */
-	JE_byte tempdat1;
-	/*JE_DanCShape filler;*/
 };
 
 struct JE_MegaDataType2
 {
 	JE_MapType2 mainmap;
-	struct
-	{
-		JE_byte nothing[3]; /* [1..3] */
-		JE_byte fill;
-		JE_DanCShape sh;
-	} shapes[71]; /* [0..70] */
-	JE_byte tempdat2;
 };
 
 struct JE_MegaDataType3
 {
 	JE_MapType3 mainmap;
-	struct
-	{
-		JE_byte nothing[3]; /* [1..3] */
-		JE_byte fill;
-		JE_DanCShape sh;
-	} shapes[70]; /* [0..69] */
-	JE_byte tempdat3;
 };
 
 typedef JE_byte JE_EnemyAvailType[100]; /* [1..100] */
@@ -256,16 +235,16 @@ extern JE_word curLoc;
 extern JE_boolean firstGameOver, gameLoaded, enemyStillExploding;
 extern JE_word totalEnemy;
 extern JE_word enemyKilled;
-EXT_RAM_BSS_ATTR extern struct JE_MegaDataType1 megaData1;
-EXT_RAM_BSS_ATTR extern struct JE_MegaDataType2 megaData2;
-EXT_RAM_BSS_ATTR extern struct JE_MegaDataType3 megaData3;
+extern struct JE_MegaDataType1 megaData1;
+extern struct JE_MegaDataType2 megaData2;
+extern struct JE_MegaDataType3 megaData3;
 extern JE_byte flash;
 extern JE_shortint flashChange;
 extern JE_byte displayTime;
 
 extern bool play_demo, record_demo, stopped_demo;
 extern Uint8 demo_num;
-extern FILE *demo_file;
+extern VFILE *demo_file;
 
 extern Uint8 demo_keys, next_demo_keys;
 extern Uint16 demo_keys_wait;
@@ -291,17 +270,17 @@ extern JE_word mapOrigin, mapPNum;
 extern JE_byte mapPlanet[5], mapSection[5];
 extern JE_boolean moveTyrianLogoUp;
 extern JE_boolean skipStarShowVGA;
-EXT_RAM_BSS_ATTR extern JE_MultiEnemyType enemy;
+extern JE_MultiEnemyType enemy;
 extern JE_EnemyAvailType enemyAvail;
 extern JE_word enemyOffset;
 extern JE_word enemyOnScreen;
 extern JE_byte enemyShapeTables[6];
 extern JE_word superEnemy254Jump;
-EXT_RAM_BSS_ATTR extern explosion_type explosions[MAX_EXPLOSIONS];
+extern explosion_type explosions[MAX_EXPLOSIONS];
 extern JE_integer explosionFollowAmountX, explosionFollowAmountY;
 extern JE_boolean fireButtonHeld;
 extern JE_boolean enemyShotAvail[ENEMY_SHOT_MAX];
-EXT_RAM_BSS_ATTR extern EnemyShotType enemyShot[ENEMY_SHOT_MAX];
+extern EnemyShotType enemyShot[ENEMY_SHOT_MAX];
 extern JE_byte zinglonDuration;
 extern JE_byte astralDuration;
 extern JE_word flareDuration;
@@ -328,7 +307,7 @@ extern JE_word tempW;
 extern JE_boolean doNotSaveBackup;
 extern JE_word x, y;
 extern JE_integer b;
-extern JE_byte **BKwrap1to, **BKwrap2to, **BKwrap3to, **BKwrap1, **BKwrap2, **BKwrap3;
+extern const JE_byte *BKwrap1to, *BKwrap2to, *BKwrap3to, *BKwrap1, *BKwrap2, *BKwrap3;
 extern JE_shortint specialWeaponFilter, specialWeaponFreq;
 extern JE_word specialWeaponWpn;
 extern JE_boolean linkToPlayer;

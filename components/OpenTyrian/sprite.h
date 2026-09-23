@@ -21,9 +21,11 @@
 
 #include "opentyr.h"
 
-#include "SDL3/SDL.h"
+#include "SDL.h"
 #include <assert.h>
 #include <stdio.h>
+
+#include "file.h"
 
 #define FONT_SHAPES       0
 #define SMALL_FONT_SHAPES 1
@@ -45,7 +47,7 @@ typedef struct
 {
 	Uint16 width, height;
 	Uint16 size;
-	Uint8 *data;
+	const Uint8 *data;  // in flash
 }
 Sprite;
 
@@ -56,7 +58,7 @@ typedef struct
 }
 Sprite_array;
 
-extern EXT_RAM_BSS_ATTR Sprite_array sprite_table[SPRITE_TABLES_MAX];
+extern Sprite_array sprite_table[SPRITE_TABLES_MAX];
 
 static inline Sprite *sprite( unsigned int table, unsigned int index )
 {
@@ -79,7 +81,7 @@ static inline Uint16 get_sprite_height( unsigned int table, unsigned int index )
 }
 
 void load_sprites_file( unsigned table, const char *filename );
-void load_sprites( unsigned int table, FILE *f );
+void load_sprites( unsigned int table, VFILE *f );
 void free_sprites( unsigned int table );
 
 void blit_sprite( SDL_Surface *, int x, int y, unsigned int table, unsigned int index ); // JE_newDrawCShapeNum
@@ -92,7 +94,7 @@ void blit_sprite_dark( SDL_Surface *, int x, int y, unsigned int table, unsigned
 typedef struct
 {
 	unsigned int size;
-	Uint8 *data;
+	const Uint8 *data;  // in flash
 }
 Sprite2_array;
 
@@ -100,7 +102,7 @@ extern Sprite2_array eShapes[6];
 extern Sprite2_array shapesC1, shapes6, shapes9, shapesW2;
 
 void JE_loadCompShapes( Sprite2_array *, JE_char s );
-void JE_loadCompShapesB( Sprite2_array *, FILE *f );
+void JE_loadCompShapesB( Sprite2_array *, VFILE *f );
 void free_sprite2s( Sprite2_array * );
 
 void blit_sprite2( SDL_Surface *, int x, int y, Sprite2_array, unsigned int index );

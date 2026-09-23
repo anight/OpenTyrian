@@ -21,28 +21,39 @@
 
 #include "opentyr.h"
 
-#include "SDL3/SDL.h"
+#include "SDL.h"
+
+#include "file.h"
 
 typedef SDL_Color Palette[256];
 
-EXT_RAM_BSS_ATTR extern Palette palettes[];
-extern int palette_count;
+#ifdef TYRIAN2000
+#define PALETTE_COUNT 24
+#else
+#define PALETTE_COUNT 23
+#endif
 
-EXT_RAM_BSS_ATTR extern Uint32 rgb_palette[256], yuv_palette[256];
+/* palette.dat, compiled into flash by tools/assets/gamedata_gen.c. */
+extern const Palette ty_palettes[PALETTE_COUNT];
+#define palettes ty_palettes
+#define palette_count PALETTE_COUNT
 
-EXT_RAM_BSS_ATTR extern Palette colors; // TODO: get rid of this
-extern SDL_Palette *palette;
+extern Palette colors; // TODO: get rid of this
 
 void JE_loadPals( void );
 
-void set_palette( Palette colors, unsigned int first_color, unsigned int last_color );
+/* Reads up to max palettes from f; returns how many there were.  Run on the
+ * host at build time, not by the firmware - see gamedata.c. */
+int JE_readPals( VFILE *f, Palette *out, int max );
+
+void set_palette( const Palette colors, unsigned int first_color, unsigned int last_color );
 void set_colors( SDL_Color color, unsigned int first_color, unsigned int last_color );
 
-void init_step_fade_palette( int diff[256][3], Palette colors, unsigned int first_color, unsigned int last_color );
+void init_step_fade_palette( int diff[256][3], const Palette colors, unsigned int first_color, unsigned int last_color );
 void init_step_fade_solid( int diff[256][3], SDL_Color color, unsigned int first_color, unsigned int last_color );
 void step_fade_palette( int diff[256][3], int steps, unsigned int first_color, unsigned int last_color );
 
-void fade_palette( Palette colors, int steps, unsigned int first_color, unsigned int last_color );
+void fade_palette( const Palette colors, int steps, unsigned int first_color, unsigned int last_color );
 void fade_solid( SDL_Color color, int steps, unsigned int first_color, unsigned int last_color );
 
 void fade_black( int steps );

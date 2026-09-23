@@ -20,6 +20,7 @@
 #include "episodes.h"
 #include "fonthand.h"
 #include "keyboard.h"
+#include "helptext.h"
 #include "menus.h"
 #include "nortsong.h"
 #include "opentyr.h"
@@ -29,7 +30,6 @@
 #include "sprite.h"
 #include "video.h"
 
-EXT_RAM_BSS_ATTR char episode_name[6][31], difficulty_name[7][21], gameplay_name[GAMEPLAY_NAME_COUNT][26];
 
 bool select_gameplay( void )
 {
@@ -200,7 +200,7 @@ bool select_difficulty( void )
 		JE_word temp = 0;
 		JE_textMenuWait(&temp, false);
 
-		if (SDL_GetModState() & SDL_KMOD_SHIFT)
+		if (SDL_GetModState() & KMOD_SHIFT)
 		{
 			if ((difficulty_max < 4 && keysactive[SDL_SCANCODE_G]) ||
 			    (difficulty_max == 4 && keysactive[SDL_SCANCODE_RIGHTBRACKET]))

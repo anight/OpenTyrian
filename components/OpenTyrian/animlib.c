@@ -52,7 +52,7 @@ typedef struct anim_LargePageHeader_s
 
 
 /*** Globals ***/
-EXT_RAM_BSS_ATTR Uint8 CurrentPageBuffer[65536];
+Uint8 CurrentPageBuffer[65536];
 anim_LargePageHeader_t PageHeader[256];
 unsigned int CurrentPageRecordSizes[256];
 
@@ -61,7 +61,7 @@ anim_FileHeader_t FileHeader;
 
 unsigned int Curlpnum;
 
-FILE * InFile;
+VFILE * InFile;
 
 
 /*** Function decs ***/

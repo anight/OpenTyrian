@@ -1,4 +1,4 @@
-/* 
+/*
  * OpenTyrian: A modern cross-platform port of Tyrian
  * Copyright (C) 2007-2009  The OpenTyrian Development Team
  *
@@ -17,347 +17,342 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 #include "file.h"
+
+#include "inflate.h"
 #include "opentyr.h"
+#include "tyrian_assets.h"
 #include "varz.h"
 
-#include "SDL3/SDL.h"
+#include <ctype.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
-// #include "esp_vfs_fat.h"
-#include "esp_vfs.h"
-#include "esp_littlefs.h"
-#include "driver/sdmmc_host.h"
-#include "driver/sdspi_host.h"
-
-#define MODE_SPI 1
-#define PIN_NUM_MISO CONFIG_HW_SD_PIN_NUM_MISO
-#define PIN_NUM_MOSI CONFIG_HW_SD_PIN_NUM_MOSI
-#define PIN_NUM_CLK  CONFIG_HW_SD_PIN_NUM_CLK
-#define PIN_NUM_CS   CONFIG_HW_SD_PIN_NUM_CS
-
 const char *custom_data_dir = NULL;
 
-static bool init_SD = false;
+/*
+ * Handles are a fixed pool.  The most the game holds open at once is the
+ * music file, which stays open for the whole run, plus a level, its episode
+ * script and its tile set while a level loads.
+ */
+#define VFS_MAX_OPEN 8
 
-
-// Function to list files in a directory
-void listFiles(const char *dirname) {
-    DIR *dir;
-    struct dirent *entry;
-
-    // Open the directory
-    dir = opendir(dirname);
-    if (!dir) {
-        printf("Failed to open directory: %s\n", dirname);
-        return;
-    }
-
-    // Read directory entries
-    while ((entry = readdir(dir)) != NULL) {
-        struct stat entry_stat;
-        char path[1024];
-
-        // Build full path for stat
-        snprintf(path, sizeof(path), "%s/%s", dirname, entry->d_name);
-
-        // Get entry status
-        if (stat(path, &entry_stat) == -1) {
-            printf("Failed to stat %s\n", path);
-            continue;
-        }
-
-        // Check if it's a directory or a file
-        if (S_ISDIR(entry_stat.st_mode)) {
-            printf("[DIR]  %s\n", entry->d_name);
-        } else if (S_ISREG(entry_stat.st_mode)) {
-            printf("[FILE] %s (Size: %ld bytes)\n", entry->d_name, entry_stat.st_size);
-        }
-    }
-
-    // Close the directory
-    closedir(dir);
-}
-
-
-
-void SDL_InitFS(void) {
-    printf("Initialising File System\n");
-
-    // Define the LittleFS configuration
-    esp_vfs_littlefs_conf_t conf = {
-        .base_path = "/sd",
-        .partition_label = "storage",
-        .format_if_mount_failed = false,
-        .dont_mount = false,
-    };
-
-    // Use the API to mount and possibly format the file system
-    esp_err_t err = esp_vfs_littlefs_register(&conf);
-    if (err != ESP_OK) {
-        printf("Failed to mount or format filesystem\n");
-    } else {
-        printf("Filesystem mounted\n");
-        printf("Listing files in /:\n");
-        listFiles("/sd");
-    }
-}
-
-void Init_SD()
+struct VFILE
 {
-	SDL_InitFS();
-	//sdmmc_card_print_info(stdout, card);
-	init_SD = true;
+	const struct ty_asset *asset;  // NULL when the slot is free
+	uint32_t pos;
+	bool eof;                      // a read ran off the end, as feof() means it
+};
+
+static VFILE open_files[VFS_MAX_OPEN];
+
+/*
+ * Decoded blocks of the compressed files, shared by every handle.
+ *
+ * Three, because a level load interleaves reads from the level file and the
+ * episode script, and the music file can be read in the middle of either.
+ * A handle reading forward uses one slot; the others keep its neighbours from
+ * evicting it.  12 KB in all, against the megabyte and a half these files
+ * decompress to.
+ */
+#define VFS_CACHE_SLOTS 3
+
+static struct
+{
+	const struct ty_asset *asset;
+	uint32_t block;
+	uint32_t used;                 // for least-recently-used replacement
+	uint8_t data[TY_ASSET_BLOCK];
+} cache[VFS_CACHE_SLOTS];
+
+static uint32_t cache_clock;
+
+static void vfs_die( const char *what, const VFILE *f )
+{
+	fprintf(stderr, "error: %s: %s\n", f && f->asset ? f->asset->name : "(no file)", what);
+	JE_tyrianHalt(1);
 }
 
-// finds the Tyrian data directory
+static const uint8_t *cached_block( const struct ty_asset *a, uint32_t block )
+{
+	unsigned victim = 0;
+
+	for (unsigned i = 0; i < VFS_CACHE_SLOTS; ++i)
+	{
+		if (cache[i].asset == a && cache[i].block == block)
+		{
+			cache[i].used = ++cache_clock;
+			return cache[i].data;
+		}
+		if (cache[i].used < cache[victim].used)
+			victim = i;
+	}
+
+	uint32_t want = a->size - block * TY_ASSET_BLOCK;
+	if (want > TY_ASSET_BLOCK)
+		want = TY_ASSET_BLOCK;
+
+	long got = inflate_raw(cache[victim].data, TY_ASSET_BLOCK,
+	                       a->data + a->offsets[block],
+	                       a->offsets[block + 1] - a->offsets[block]);
+	if (got != (long)want)
+	{
+		// Flash is not supposed to change under us; if it has, nothing read
+		// from this file can be trusted.
+		cache[victim].asset = NULL;
+		fprintf(stderr, "error: %s: block %u is corrupt\n", a->name, (unsigned)block);
+		JE_tyrianHalt(1);
+	}
+
+	cache[victim].asset = a;
+	cache[victim].block = block;
+	cache[victim].used = ++cache_clock;
+	return cache[victim].data;
+}
+
+static const struct ty_asset *find_asset( const char *file )
+{
+	char name[32];
+	size_t i;
+
+	for (i = 0; file[i] != '\0' && i < sizeof(name) - 1; ++i)
+		name[i] = tolower((unsigned char)file[i]);
+	name[i] = '\0';
+
+	unsigned lo = 0, hi = ty_asset_count;
+	while (lo < hi)
+	{
+		unsigned mid = (lo + hi) / 2;
+		int cmp = strcmp(name, ty_assets[mid].name);
+		if (cmp == 0)
+			return &ty_assets[mid];
+		if (cmp < 0)
+			hi = mid;
+		else
+			lo = mid + 1;
+	}
+	return NULL;
+}
+
+// the data is wherever the table says it is
 const char *data_dir( void )
 {
-	return "/sd/tyrian/data";
-	const char *dirs[] =
-	{
-		"/sd/tyrian/data",
-		custom_data_dir,
-		TYRIAN_DIR,
-		"data",
-		".",
-	};
-	
-	static const char *dir = NULL;
-	
-	if (dir != NULL)
-		return dir;
-	
-	for (uint i = 0; i < COUNTOF(dirs); ++i)
-	{
-		if (dirs[i] == NULL)
-			continue;
-		
-		FILE *f = dir_fopen(dirs[i], "tyrian1.lvl", "rb");
-		if (f)
-		{
-			efclose(f);
-			
-			dir = dirs[i];
-			break;
-		}
-	}
-	
-	if (dir == NULL) // data not found
-		dir = "";
-	
-	return dir;
+	return "";
 }
 
-// prepend directory and fopen
-FILE *dir_fopen( const char *dir, const char *file, const char *mode )
+// the directory is ignored: there is one namespace, and it is the table
+VFILE *dir_fopen( const char *dir, const char *file, const char *mode )
 {
-	char path[512]; 
-	fprintf(stderr, "Opening File: %s/%s\n", dir, file);
-	if(init_SD == false)
-		Init_SD();
+	(void)dir;
 
-	//char *path = (char *)malloc(strlen(dir) + 1 + strlen(file) + 1);
-	sprintf(path, "%s/%s", dir, file);
-	
-	// SDL_LockDisplay();
-	FILE *f = fopen(path, mode);
-	// SDL_UnlockDisplay();
-	
-	//free(path);
-	
-	return f;
+	if (strpbrk(mode, "wa+") != NULL)
+	{
+		errno = EROFS;
+		return NULL;
+	}
+
+	const struct ty_asset *a = find_asset(file);
+	if (a == NULL)
+	{
+		errno = ENOENT;
+		return NULL;
+	}
+
+	for (unsigned i = 0; i < VFS_MAX_OPEN; ++i)
+	{
+		if (open_files[i].asset == NULL)
+		{
+			open_files[i].asset = a;
+			open_files[i].pos = 0;
+			open_files[i].eof = false;
+			return &open_files[i];
+		}
+	}
+
+	fprintf(stderr, "error: more than %d files open at once opening '%s'\n", VFS_MAX_OPEN, file);
+	JE_tyrianHalt(1);
+	return NULL;
 }
 
 // warn when dir_fopen fails
-FILE *dir_fopen_warn(  const char *dir, const char *file, const char *mode )
+VFILE *dir_fopen_warn(  const char *dir, const char *file, const char *mode )
 {
-	FILE *f = dir_fopen(dir, file, mode);
-	
+	VFILE *f = dir_fopen(dir, file, mode);
+
 	if (f == NULL)
 		fprintf(stderr, "warning: failed to open '%s': %s\n", file, strerror(errno));
-	
+
 	return f;
 }
 
 // die when dir_fopen fails
-FILE *dir_fopen_die( const char *dir, const char *file, const char *mode )
+VFILE *dir_fopen_die( const char *dir, const char *file, const char *mode )
 {
-	FILE *f = dir_fopen(dir, file, mode);
-	
+	VFILE *f = dir_fopen(dir, file, mode);
+
 	if (f == NULL)
 	{
 		fprintf(stderr, "error: failed to open '%s': %s\n", file, strerror(errno));
-		fprintf(stderr, "error: One or more of the required Tyrian " TYRIAN_VERSION " data files could not be found.\n"
-		                "       Please read the README file.\n");
+		fprintf(stderr, "error: '%s' was not converted into this firmware - see tools/assets/convert.py\n", file);
 		JE_tyrianHalt(1);
 	}
-	
+
 	return f;
 }
 
 // check if file can be opened for reading
 bool dir_file_exists( const char *dir, const char *file )
 {
-	FILE *f = dir_fopen(dir, file, "rb");
-	if (f != NULL)
-	{
-		efclose(f);
-	}
-	return (f != NULL);
+	(void)dir;
+	return find_asset(file) != NULL;
 }
 
 // returns end-of-file position
-long ftell_eof( FILE *f )
+long ftell_eof( VFILE *f )
 {
-	// SDL_LockDisplay();
-	long pos = ftell(f);
-	
-	fseek(f, 0, SEEK_END);
-	long size = ftell(f);
-	
-	fseek(f, pos, SEEK_SET);
-	// SDL_UnlockDisplay();
-	return size;
+	return f->asset->size;
 }
 
-int efeof ( FILE * stream )
+const void *vfs_map( VFILE *f, size_t n )
 {
-	// SDL_LockDisplay();
-	int ret = feof ( stream );
-	// SDL_UnlockDisplay();
-	return ret;	
+	const struct ty_asset *a = f->asset;
+
+	if (a->blocks != 0)
+		vfs_die("mapped, but the converter compressed it; it must be stored raw", f);
+	if (f->pos > a->size || n > a->size - f->pos)
+		vfs_die("mapped past its end", f);
+
+	const void *p = a->data + f->pos;
+	f->pos += n;
+	return p;
 }
 
-int efputc ( int character, FILE * stream )
+size_t vfs_read( void *buffer, size_t size, size_t num, VFILE *f )
 {
-	// SDL_LockDisplay();
-	int ret = fputc ( character, stream );
-	// SDL_UnlockDisplay();
-	return ret;	
-}
+	const struct ty_asset *a = f->asset;
 
-int efgetc ( FILE * stream )
-{
-	// SDL_LockDisplay();
-	int ret = fgetc ( stream );
-	// SDL_UnlockDisplay();
-	return ret;	
-}
+	if (size == 0 || num == 0)
+		return 0;
 
-size_t eefwrite ( const void * ptr, size_t size, size_t count, FILE * stream )
-{
-	// SDL_LockDisplay();
-	size_t ret = fwrite ( ptr, size, count, stream );
-	// SDL_UnlockDisplay();
-	return ret;		
-}
-
-int efclose ( FILE * stream )
-{
-	// SDL_LockDisplay();
-	int ret = fclose ( stream );
-	// SDL_UnlockDisplay();
-	return ret;	
-}
-
-long int eftell ( FILE * stream )
-{
-	// SDL_LockDisplay();
-	long int ret = ftell ( stream );
-	// SDL_UnlockDisplay();
-	return ret;
-}
-
-int efseek( FILE * stream, long int offset, int origin )
-{
-	// SDL_LockDisplay();
-	int ret = fseek ( stream, offset, origin );
-	// SDL_UnlockDisplay();
-	return ret;
-}
-
-// endian-swapping fread that dies if the expected amount cannot be read
-size_t efread( void *buffer, size_t size, size_t num, FILE *stream )
-{
-	// SDL_LockDisplay();
-	size_t num_read = fread(buffer, size, num, stream);
-	// SDL_UnlockDisplay();
-
-	switch (size)
+	size_t avail = f->pos < a->size ? a->size - f->pos : 0;
+	size_t want = size * num;
+	if (want > avail)
 	{
-#if SDL_BYTEORDER == SDL_BIG_ENDIAN
-		case 2:
-			for (size_t i = 0; i < num; i++)
-				((Uint16 *)buffer)[i] = SDL_Swap16(((Uint16 *)buffer)[i]);
-			break;
-		case 4:
-			for (size_t i = 0; i < num; i++)
-				((Uint32 *)buffer)[i] = SDL_Swap32(((Uint32 *)buffer)[i]);
-			break;
-		case 8:
-			for (size_t i = 0; i < num; i++)
-				((Uint64 *)buffer)[i] = SDL_Swap64(((Uint64 *)buffer)[i]);
-			break;
-#endif
-		default:
-			break;
+		want = avail - avail % size;  // only whole items, as fread does
+		f->eof = true;
 	}
-	
+
+	Uint8 *dst = buffer;
+	size_t left = want;
+	while (left > 0)
+	{
+		size_t chunk;
+
+		if (a->blocks == 0)
+		{
+			chunk = left;
+			memcpy(dst, a->data + f->pos, chunk);
+		}
+		else
+		{
+			uint32_t block = f->pos / TY_ASSET_BLOCK, offset = f->pos % TY_ASSET_BLOCK;
+			chunk = TY_ASSET_BLOCK - offset;
+			if (chunk > left)
+				chunk = left;
+			memcpy(dst, cached_block(a, block) + offset, chunk);
+		}
+
+		dst += chunk;
+		f->pos += chunk;
+		left -= chunk;
+	}
+
+	return want / size;
+}
+
+int efeof ( VFILE * stream )
+{
+	return stream->eof;
+}
+
+int efputc ( int character, VFILE * stream )
+{
+	(void)character;
+	(void)stream;
+	return EOF;
+}
+
+int efgetc ( VFILE * stream )
+{
+	Uint8 c;
+	return vfs_read(&c, 1, 1, stream) == 1 ? c : EOF;
+}
+
+size_t eefwrite ( const void * ptr, size_t size, size_t count, VFILE * stream )
+{
+	(void)ptr;
+	(void)size;
+	(void)count;
+	(void)stream;
+	return 0;
+}
+
+int efclose ( VFILE * stream )
+{
+	if (stream != NULL)
+		stream->asset = NULL;
+	return 0;
+}
+
+long int eftell ( VFILE * stream )
+{
+	return stream->pos;
+}
+
+int efseek( VFILE * stream, long int offset, int origin )
+{
+	long base;
+
+	switch (origin)
+	{
+	case SEEK_SET: base = 0;                   break;
+	case SEEK_CUR: base = stream->pos;         break;
+	case SEEK_END: base = stream->asset->size; break;
+	default:       return -1;
+	}
+
+	if (base + offset < 0)
+		return -1;
+
+	// Past the end is allowed, as fseek allows it; the next read says EOF.
+	stream->pos = base + offset;
+	stream->eof = false;
+	return 0;
+}
+
+// fread that dies if the expected amount cannot be read
+size_t efread( void *buffer, size_t size, size_t num, VFILE *stream )
+{
+	size_t num_read = vfs_read(buffer, size, num, stream);
+
 	if (num_read != num)
 	{
 		fprintf(stderr, "error: An unexpected problem occurred while reading from a file.\n");
-		fprintf(stderr, "read bytes: %d, expected: %d\n", num_read, num);
+		fprintf(stderr, "%s: read %u of %u at offset %ld\n", stream->asset->name,
+		        (unsigned)num_read, (unsigned)num, (long)stream->pos);
 		JE_tyrianHalt(1);
 	}
 
 	return num_read;
 }
 
-// endian-swapping fwrite that dies if the expected amount cannot be written
-size_t efwrite( const void *buffer, size_t size, size_t num, FILE *stream )
+// nothing can be opened for writing, so nothing can reach here with a file
+size_t efwrite( const void *buffer, size_t size, size_t num, VFILE *stream )
 {
-	void *swap_buffer = NULL;
-	
-	switch (size)
-	{
-#if SDL_BYTEORDER == SDL_BIG_ENDIAN
-		case 2:
-			swap_buffer = malloc(size * num);
-			for (size_t i = 0; i < num; i++)
-				((Uint16 *)swap_buffer)[i] = SDL_Swap16LE(((Uint16 *)buffer)[i]);
-			buffer = swap_buffer;
-			break;
-		case 4:
-			swap_buffer = malloc(size * num);
-			for (size_t i = 0; i < num; i++)
-				((Uint32 *)swap_buffer)[i] = SDL_Swap32LE(((Uint32 *)buffer)[i]);
-			buffer = swap_buffer;
-			break;
-		case 8:
-			swap_buffer = malloc(size * num);
-			for (size_t i = 0; i < num; i++)
-				((Uint64 *)swap_buffer)[i] = SDL_SwapLE64(((Uint64 *)buffer)[i]);
-			buffer = swap_buffer;
-			break;
-#endif
-		default:
-			break;
-	}
-	
-	// SDL_LockDisplay();
-	size_t num_written = fwrite(buffer, size, num, stream);
-	// SDL_UnlockDisplay();
-
-	if (swap_buffer != NULL)
-		free(swap_buffer);
-	
-	if (num_written != num)
-	{
-		fprintf(stderr, "error: An unexpected problem occurred while writing to a file.\n");
-		JE_tyrianHalt(1);
-	}
-	
-	return num_written;
+	(void)buffer;
+	(void)size;
+	(void)num;
+	vfs_die("written, but files are read-only", stream);
+	return 0;
 }

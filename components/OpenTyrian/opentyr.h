@@ -19,10 +19,11 @@
 #ifndef OPENTYR_H
 #define OPENTYR_H
 
-#include "SDL3/SDL.h"
+#include "SDL.h"
 #include <math.h>
 #include <stdbool.h>
-#include "esp_attr.h"
+#include <stdint.h>
+#include <string.h>
 
 #define COUNTOF(x) ((unsigned)(sizeof(x) / sizeof *(x)))  // use only on arrays!
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -38,11 +39,37 @@
 #define M_PI_4  0.78539816339744830962  // pi/4
 #endif
 
+/*
+ * The fork was ported to SDL3 and picosdl is SDL2; these are the few SDL3
+ * spellings the game still uses, and the SDL2 conveniences picosdl leaves
+ * out because nothing but a game would want them.
+ */
+#define SDL_Swap16LE(x) SDL_SwapLE16(x)
+#define SDL_Swap32LE(x) SDL_SwapLE32(x)
+#define SDL_Swap16(x)   ((Uint16)__builtin_bswap16((Uint16)(x)))
+#define SDL_Swap32(x)   ((Uint32)__builtin_bswap32((Uint32)(x)))
+
+#define SDL_BUTTON_LEFT   1
+#define SDL_BUTTON_MIDDLE 2
+#define SDL_BUTTON_RIGHT  3
+
+static inline size_t SDL_strlcpy( char *dst, const char *src, size_t maxlen )
+{
+	size_t len = strlen(src);
+	if (maxlen > 0)
+	{
+		size_t n = len < maxlen - 1 ? len : maxlen - 1;
+		memcpy(dst, src, n);
+		dst[n] = '\0';
+	}
+	return len;
+}
+
 typedef unsigned int uint;
 typedef unsigned long ulong;
 
 // Pascal types, yuck.
-typedef long JE_longint;
+typedef int32_t JE_longint;  // 32 bits in the data files, whatever long is
 //typedef int JE_integer;
 typedef short JE_integer;
 //typedef short  JE_shortint;
@@ -64,7 +91,7 @@ typedef float  JE_real;
 extern const char *opentyrian_str, *opentyrian_version;
 
 void opentyrian_menu( void );
-int main( int argc, char *argv[] );
+int opentyrian_main( int argc, char *argv[] );
 
 #endif /* OPENTYR_H */
 

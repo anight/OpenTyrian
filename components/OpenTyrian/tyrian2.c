@@ -56,7 +56,6 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "esp_heap_caps.h"
 
 inline static void blit_enemy( SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset );
 
@@ -65,7 +64,7 @@ boss_bar_t boss_bar[2];
 /* Level Event Data */
 JE_boolean quit, loadLevelOk;
 
-EXT_RAM_BSS_ATTR struct JE_EventRecType eventRec[EVENT_MAXIMUM]; /* [1..eventMaximum] */
+struct JE_EventRecType eventRec[EVENT_MAXIMUM]; /* [1..eventMaximum] */
 JE_word levelEnemyMax;
 JE_word levelEnemyFrequency;
 JE_word levelEnemy[40]; /* [1..40] */
@@ -584,7 +583,7 @@ enemy_still_exists:
 						struct JE_SingleEnemyType* e = &enemy[b-1];
 
 						e->ex = tempX;
-						e->ey = tempY + enemyDat[e->enemytype].startyc;
+						e->ey = tempY + enemy_dat(e->enemytype)->startyc;
 						if (e->size == 0)
 							e->ey -= 7;
 
@@ -632,7 +631,6 @@ draw_enemy_end:
 void JE_main( void )
 {
 	char buffer[256];
-	//enemy = (JE_MultiEnemyType*)heap_caps_malloc(100*sizeof(JE_MultiEnemyType), MALLOC_CAP_SPIRAM);
 	int lastEnemyOnScreen;
 
 	/* NOTE: BEGIN MAIN PROGRAM HERE AFTER LOADING A GAME OR STARTING A NEW ONE */
@@ -1621,7 +1619,7 @@ level_loop:
 											tempX = enemy[temp3].ex + enemy[temp3].mapoffset;
 											tempY = enemy[temp3].ey;
 
-											if (enemyDat[enemy[temp3].enemytype].esize != 1)
+											if (enemy_dat(enemy[temp3].enemytype)->esize != 1)
 												JE_setupExplosion(tempX, tempY - 6, 0, 1, false, false);
 											else
 												JE_setupExplosionLarge(enemy[temp3].enemyground, enemy[temp3].explonum / 2, tempX, tempY);
@@ -1656,12 +1654,12 @@ level_loop:
 
 										if ((enemy[temp2].enemydie > 0) &&
 										    !((superArcadeMode != SA_NONE) &&
-										      (enemyDat[enemy[temp2].enemydie].value == 30000)))
+										      (enemy_dat(enemy[temp2].enemydie)->value == 30000)))
 										{
 											int temp_b = b;
 											tempW = enemy[temp2].enemydie;
 											int enemy_offset = temp2 - (temp2 % 25);
-											if (enemyDat[tempW].value > 30000)
+											if (enemy_dat(tempW)->value > 30000)
 											{
 												enemy_offset = 0;
 											}
@@ -1716,7 +1714,7 @@ level_loop:
 											enemyKilled++;
 										}
 
-										if (enemyDat[enemy[temp2].enemytype].esize == 1)
+										if (enemy_dat(enemy[temp2].enemytype)->esize == 1)
 										{
 											JE_setupExplosionLarge(enemy[temp2].enemyground, enemy[temp2].explonum, enemy_screen_x, enemy[temp2].ey);
 											soundQueue[6] = S_EXPLOSION_9;
@@ -2384,34 +2382,19 @@ draw_player_shot_loop_end:
 /* --- Load Level/Map Data --- */
 void JE_loadMap( void )
 {
-	printf("Loading Map\n");
-	// if(megaData1.mainmap == NULL)
-	// {
-/*		JE_MapType *map1 = allocateTwoDimenArrayOnHeapUsingMalloc(300, 14);
-		megaData1.mainmap = map1;
-		megaData1.shapes = malloc(sizeof(struct JE_MegaDataShapesType1)*72);
-		megaData2.mainmap = allocateTwoDimenArrayOnHeapUsingMalloc(600, 14);
-		megaData2.shapes = malloc(sizeof(struct JE_MegaDataShapesType2_3)*71);
-		megaData3.mainmap = allocateTwoDimenArrayOnHeapUsingMalloc(600, 15);
-		megaData3.shapes = malloc(sizeof(struct JE_MegaDataShapesType2_3)*70);
-		eventRec = malloc(EVENT_MAXIMUM * sizeof(struct JE_EventRecType));
-		*/
-	// }
-
-	JE_DanCShape shape;
 
 	JE_word x, y;
-	JE_integer yy;
 	JE_word mapSh[3][128]; /* [1..3, 0..127] */
-	JE_byte *ref[3][128]; /* [1..3, 0..127] */
 	char s[256];
 
-	JE_byte mapBuf[15 * 600]; /* [1..15 * 600] */
-	JE_word bufLoc;
 
 	char buffer[256];
 	int i;
-	Uint8 *pic_buffer = malloc(320*200);//[320*200]; /* screen buffer, 8-bit specific */
+	/* The picture wipes below need a whole screen to hold the incoming picture
+	 * while they reveal it.  game_screen is where the play field is drawn, and
+	 * nothing between levels reads it - the next level redraws it entirely -
+	 * so it is borrowed rather than allocating 64 KB for the length of this. */
+	Uint8 *const pic_buffer = game_screen->pixels; /* screen buffer, 8-bit specific */
 	Uint8 *vga, *pic, *vga2; /* screen pointer, 8-bit specific */
 
 	lastCubeMax = cubeMax;
@@ -2421,7 +2404,6 @@ void JE_loadMap( void )
 
 	/* Load LEVELS.DAT - Section = MAINLEVEL */
 	saveLevel = mainLevel;
-	printf("Variables Created\n");
 new_game:
 	galagaMode  = false;
 	useLastBank = false;
@@ -2434,7 +2416,7 @@ new_game:
 	{
 		do
 		{
-			FILE *ep_f = dir_fopen_die(data_dir(), episode_file, "rb");
+			VFILE *ep_f = dir_fopen_die(data_dir(), episode_file, "rb");
 
 			jumpSection = false;
 			loadLevelOk = false;
@@ -2473,7 +2455,11 @@ new_game:
 					switch (s[1])
 					{
 					case 'A':
+#ifdef WITH_ENDING_ANIM
+						/* tyrend.anm is 3.3 MB and never converted; its player
+						 * needs 67 KB of buffers to show it. */
 						JE_playAnim("tyrend.anm", 0, 7);
+#endif
 						break;
 
 					case 'G':
@@ -2774,7 +2760,7 @@ new_game:
 
 							tempX = atoi(s + 3);
 							JE_loadPic(VGAScreen, tempX, false);
-							memcpy(pic_buffer, VGAScreen->pixels, 320*200);//sizeof(pic_buffer));
+							memcpy(pic_buffer, VGAScreen->pixels, 320*200);
 
 							service_SDL_events(true);
 
@@ -2814,7 +2800,7 @@ new_game:
 								}
 							}
 
-							memcpy(VGAScreen->pixels, pic_buffer, 320*200);//sizeof(pic_buffer));
+							memcpy(VGAScreen->pixels, pic_buffer, 320*200);
 						}
 						break;
 
@@ -2826,7 +2812,7 @@ new_game:
 
 							tempX = atoi(s + 3);
 							JE_loadPic(VGAScreen, tempX, false);
-							memcpy(pic_buffer, VGAScreen->pixels, 320*200);//sizeof(pic_buffer));
+							memcpy(pic_buffer, VGAScreen->pixels, 320*200);
 
 							service_SDL_events(true);
 							for (int z = 0; z <= 199; z++)
@@ -2865,7 +2851,7 @@ new_game:
 								}
 							}
 
-							memcpy(VGAScreen->pixels, pic_buffer, 320*200);//sizeof(pic_buffer));
+							memcpy(VGAScreen->pixels, pic_buffer, 320*200);
 						}
 						break;
 
@@ -2877,7 +2863,7 @@ new_game:
 
 							tempX = atoi(s + 3);
 							JE_loadPic(VGAScreen, tempX, false);
-							memcpy(pic_buffer, VGAScreen->pixels, 320*200);//sizeof(pic_buffer));
+							memcpy(pic_buffer, VGAScreen->pixels, 320*200);
 
 							service_SDL_events(true);
 
@@ -2912,7 +2898,7 @@ new_game:
 								}
 							}
 
-							memcpy(VGAScreen->pixels, pic_buffer, 320*200);//sizeof(pic_buffer));
+							memcpy(VGAScreen->pixels, pic_buffer, 320*200);
 						}
 						break;
 
@@ -3034,8 +3020,7 @@ new_game:
 	else
 		fade_black(50);
 
-	printf("Next Section. /n");
-	FILE *level_f = dir_fopen_die(data_dir(), levelFile, "rb");
+	VFILE *level_f = dir_fopen_die(data_dir(), levelFile, "rb");
 
 	efseek(level_f, lvlPos[(lvlFileNum-1) * 2], SEEK_SET);
 
@@ -3052,6 +3037,11 @@ new_game:
 	}
 
 	efread(&maxEvent, sizeof(JE_word), 1, level_f);
+	if (maxEvent >= EVENT_MAXIMUM)
+	{
+		fprintf(stderr, "error: level has %u events, more than the %d this build holds\n", maxEvent, EVENT_MAXIMUM - 1);
+		JE_tyrianHalt(1);
+	}
 	for (x = 0; x < maxEvent; x++)
 	{
 		efread(&eventRec[x].eventtime, sizeof(JE_word), 1, level_f);
@@ -3081,116 +3071,54 @@ new_game:
 
 	/* Read Shapes.DAT */
 	sprintf(tempStr, "shapes%c.dat", tolower((unsigned char)char_shapeFile));
-	FILE *shpFile = dir_fopen_die(data_dir(), tempStr, "rb");
+	VFILE *shpFile = dir_fopen_die(data_dir(), tempStr, "rb");
+
+	/* A blank tile is drawn as zeros on the first layer and not at all on the
+	 * other two, which is what the copies this replaced held. */
+	static const JE_byte blank_tile[24 * 28];
+
+	/* Tiles the map names but the lookup table does not match stay NULL, and
+	 * are not drawn; the game left them uninitialised. */
+	memset(mapTiles, 0, sizeof(mapTiles));
 
 	for (int z = 0; z < 600; z++)
 	{
 		JE_boolean shapeBlank = efgetc(shpFile);
 
-		if (shapeBlank)
-			memset(shape, 0, sizeof(shape));
-		else
-			efread(shape, sizeof(JE_byte), sizeof(shape), shpFile);
+		// the tile's pixels, where they are in flash
+		const JE_byte *shape = shapeBlank ? blank_tile : vfs_map(shpFile, 24 * 28);
 
 		/* Match 1 */
 		for (int x = 0; x <= 71; ++x)
 		{
 			if (mapSh[0][x] == z+1)
-			{
-				memcpy(megaData1.shapes[x].sh, shape, sizeof(JE_DanCShape));
-
-				ref[0][x] = (JE_byte *)megaData1.shapes[x].sh;
-			}
+				mapTiles[0][x] = shape;
 		}
 
 		/* Match 2 */
 		for (int x = 0; x <= 71; ++x)
 		{
 			if (mapSh[1][x] == z+1)
-			{
-				if (x != 71 && !shapeBlank)
-				{
-					memcpy(megaData2.shapes[x].sh, shape, sizeof(JE_DanCShape));
-
-					y = 1;
-					for (yy = 0; yy < (24 * 28) >> 1; yy++)
-						if (shape[yy] == 0)
-							y = 0;
-
-					megaData2.shapes[x].fill = y;
-					ref[1][x] = (JE_byte *)megaData2.shapes[x].sh;
-				}
-				else
-				{
-					ref[1][x] = NULL;
-				}
-			}
+				mapTiles[1][x] = (x != 71 && !shapeBlank) ? shape : NULL;
 		}
 
 		/*Match 3*/
 		for (int x = 0; x <= 71; ++x)
 		{
 			if (mapSh[2][x] == z+1)
-			{
-				if (x < 70 && !shapeBlank)
-				{
-					memcpy(megaData3.shapes[x].sh, shape, sizeof(JE_DanCShape));
-
-					y = 1;
-					for (yy = 0; yy < (24 * 28) >> 1; yy++)
-						if (shape[yy] == 0)
-							y = 0;
-
-					megaData3.shapes[x].fill = y;
-					ref[2][x] = (JE_byte *)megaData3.shapes[x].sh;
-				}
-				else
-				{
-					ref[2][x] = NULL;
-				}
-			}
+				mapTiles[2][x] = (x < 70 && !shapeBlank) ? shape : NULL;
 		}
 	}
 
 	efclose(shpFile);
 
 
-	efread(mapBuf, sizeof(JE_byte), 14 * 300, level_f);
-	bufLoc = 0;              /* MAP NUMBER 1 */
-	for (y = 0; y < 300; y++)
-	{
-		for (x = 0; x < 14; x++)
-		{
-			megaData1.mainmap[y][x] = ref[0][mapBuf[bufLoc]];
-			bufLoc++;
-		}
-	}
-
-	efread(mapBuf, sizeof(JE_byte), 14 * 600, level_f);
-	bufLoc = 0;              /* MAP NUMBER 2 */
-	for (y = 0; y < 600; y++)
-	{
-		for (x = 0; x < 14; x++)
-		{
-			megaData2.mainmap[y][x] = ref[1][mapBuf[bufLoc]]; 
-			bufLoc++;
-		}
-	}
-
-	efread(mapBuf, sizeof(JE_byte), 15 * 600, level_f);
-	bufLoc = 0;              /* MAP NUMBER 3 */
-	for (y = 0; y < 600; y++)
-	{
-		for (x = 0; x < 15; x++)
-		{
-			megaData3.mainmap[y][x] = ref[2][mapBuf[bufLoc]];
-			bufLoc++;
-		}
-	}
+	/* The three maps are tile numbers, and are kept as they are read. */
+	efread(megaData1.mainmap, sizeof(JE_byte), 14 * 300, level_f); /* MAP NUMBER 1 */
+	efread(megaData2.mainmap, sizeof(JE_byte), 14 * 600, level_f); /* MAP NUMBER 2 */
+	efread(megaData3.mainmap, sizeof(JE_byte), 15 * 600, level_f); /* MAP NUMBER 3 */
 
 	efclose(level_f);
-	free(pic_buffer);
-	//free(mapBuf);
 	/* Note: The map data is automatically calculated with the correct mapsh
 	value and then the pointer is calculated using the formula (MAPSH-1)*168.
 	Then, we'll automatically add S2Ofs to get the exact offset location into
@@ -3227,7 +3155,6 @@ bool JE_titleScreen( JE_boolean animate )
 
 	gameLoaded = false;
 	jumpSection = false;
-//heap_caps_check_integrity_all(true);
 #ifdef WITH_NETWORK
 	if (isNetworkGame)
 	{
@@ -3315,7 +3242,6 @@ bool JE_titleScreen( JE_boolean animate )
 			if (redraw)
 			{
 				play_song(SONG_TITLE);
-//heap_caps_check_integrity_all(true);
 				menu = 0;
 				redraw = false;
 				if (animate)
@@ -3325,21 +3251,14 @@ bool JE_titleScreen( JE_boolean animate )
 						fade_black(10);
 						fadeIn = false;
 					}
-//heap_caps_check_integrity_all(true);					
 				
-printf("JE_loadPic\n");
 					JE_loadPic(VGAScreen, 4, false);
-printf("draw_font_hv_shadow");
 					draw_font_hv_shadow(VGAScreen, 2, 192, opentyrian_version, small_font, left_aligned, 15, 0, false, 1);
-printf("memcpy");
 					memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
 					temp = moveTyrianLogoUp ? 62 : 4;
-printf("blit_sprite");
 					blit_sprite(VGAScreenSeg, 11, temp, PLANET_SHAPES, 146); // tyrian logo
-printf("JE_showVGA");
 					JE_showVGA();
-printf("fade_palette");
 					fade_palette(colors, 10, 0, 255 - 16);
 
 					if (moveTyrianLogoUp)
@@ -3380,12 +3299,9 @@ printf("fade_palette");
 					memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 				}
 			}
-printf("memcpy");
 			memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
-printf("draw_font_hv");
 			// highlight selected menu item
 			draw_font_hv(VGAScreen, VGAScreen->w / 2, 104 + menu * 13, menuText[menu], normal_font, centered, 15, -1);
-printf("JE_showVGA");
 			JE_showVGA();
 
 			if (trentWin)
@@ -3434,7 +3350,9 @@ printf("JE_showVGA");
 				{
 					if (i+1 == SA_DESTRUCT)
 					{
+#ifdef WITH_DESTRUCT
 						loadDestruct = true;
+#endif
 					}
 					else if (i+1 == SA_ENGAGE)
 					{
@@ -3631,7 +3549,7 @@ trentWinsGame:
 
 void intro_logos( void )
 {
-	SDL_FillSurfaceRect(VGAScreen, NULL, 0);
+	SDL_FillRect(VGAScreen, NULL, 0);
 
 	fade_white(50);
 
@@ -3770,7 +3688,7 @@ uint JE_makeEnemy( struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 unique
 	}
 	else
 	{
-		shapeTableI = enemyDat[eDatI].shapebank;
+		shapeTableI = enemy_dat(eDatI)->shapebank;
 	}
 	
 	Sprite2_array *sprite2s = NULL;
@@ -3784,7 +3702,7 @@ uint JE_makeEnemy( struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 unique
 		// maintain buggy Tyrian behavior (use shape table value from previous enemy that occupied this index in the enemy array)
 		fprintf(stderr, "warning: ignoring sprite from unloaded shape table %d\n", shapeTableI);
 
-	enemy->enemydatofs = &enemyDat[eDatI];
+	enemy->enemydatofs = enemy_dat(eDatI);
 
 	enemy->mapoffset = 0;
 
@@ -3793,16 +3711,16 @@ uint JE_makeEnemy( struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 unique
 		enemy->eshotmultipos[i] = 0;
 	}
 
-	enemy->enemyground = (enemyDat[eDatI].explosiontype & 1) == 0;
-	enemy->explonum = enemyDat[eDatI].explosiontype >> 1;
+	enemy->enemyground = (enemy_dat(eDatI)->explosiontype & 1) == 0;
+	enemy->explonum = enemy_dat(eDatI)->explosiontype >> 1;
 
-	enemy->launchfreq = enemyDat[eDatI].elaunchfreq;
-	enemy->launchwait = enemyDat[eDatI].elaunchfreq;
-	enemy->launchtype = enemyDat[eDatI].elaunchtype % 1000;
-	enemy->launchspecial = enemyDat[eDatI].elaunchtype / 1000;
+	enemy->launchfreq = enemy_dat(eDatI)->elaunchfreq;
+	enemy->launchwait = enemy_dat(eDatI)->elaunchfreq;
+	enemy->launchtype = enemy_dat(eDatI)->elaunchtype % 1000;
+	enemy->launchspecial = enemy_dat(eDatI)->elaunchtype / 1000;
 
-	enemy->xaccel = enemyDat[eDatI].xaccel;
-	enemy->yaccel = enemyDat[eDatI].yaccel;
+	enemy->xaccel = enemy_dat(eDatI)->xaccel;
+	enemy->yaccel = enemy_dat(eDatI)->yaccel;
 
 	enemy->xminbounce = -10000;
 	enemy->xmaxbounce = 10000;
@@ -3812,13 +3730,13 @@ uint JE_makeEnemy( struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 unique
 
 	for (uint i = 0; i < 3; ++i)
 	{
-		enemy->tur[i] = enemyDat[eDatI].tur[i];
+		enemy->tur[i] = enemy_dat(eDatI)->tur[i];
 	}
 
-	enemy->ani = enemyDat[eDatI].ani;
+	enemy->ani = enemy_dat(eDatI)->ani;
 	enemy->animin = 1;
 
-	switch (enemyDat[eDatI].animate)
+	switch (enemy_dat(eDatI)->animate)
 	{
 	case 0:
 		enemy->enemycycle = 1;
@@ -3840,20 +3758,20 @@ uint JE_makeEnemy( struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 unique
 		break;
 	}
 
-	if (enemyDat[eDatI].startxc != 0)
-		enemy->ex = enemyDat[eDatI].startx + (mt_rand() % (enemyDat[eDatI].startxc * 2)) - enemyDat[eDatI].startxc + 1;
+	if (enemy_dat(eDatI)->startxc != 0)
+		enemy->ex = enemy_dat(eDatI)->startx + (mt_rand() % (enemy_dat(eDatI)->startxc * 2)) - enemy_dat(eDatI)->startxc + 1;
 	else
-		enemy->ex = enemyDat[eDatI].startx + 1;
+		enemy->ex = enemy_dat(eDatI)->startx + 1;
 
-	if (enemyDat[eDatI].startyc != 0)
-		enemy->ey = enemyDat[eDatI].starty + (mt_rand() % (enemyDat[eDatI].startyc * 2)) - enemyDat[eDatI].startyc + 1;
+	if (enemy_dat(eDatI)->startyc != 0)
+		enemy->ey = enemy_dat(eDatI)->starty + (mt_rand() % (enemy_dat(eDatI)->startyc * 2)) - enemy_dat(eDatI)->startyc + 1;
 	else
-		enemy->ey = enemyDat[eDatI].starty + 1;
+		enemy->ey = enemy_dat(eDatI)->starty + 1;
 
-	enemy->exc = enemyDat[eDatI].xmove;
-	enemy->eyc = enemyDat[eDatI].ymove;
-	enemy->excc = enemyDat[eDatI].xcaccel;
-	enemy->eycc = enemyDat[eDatI].ycaccel;
+	enemy->exc = enemy_dat(eDatI)->xmove;
+	enemy->eyc = enemy_dat(eDatI)->ymove;
+	enemy->excc = enemy_dat(eDatI)->xcaccel;
+	enemy->eycc = enemy_dat(eDatI)->ycaccel;
 	enemy->exccw = abs(enemy->excc);
 	enemy->exccwmax = enemy->exccw;
 	enemy->eyccw = abs(enemy->eycc);
@@ -3863,19 +3781,19 @@ uint JE_makeEnemy( struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 unique
 	enemy->special = false;
 	enemy->iced = 0;
 
-	if (enemyDat[eDatI].xrev == 0)
+	if (enemy_dat(eDatI)->xrev == 0)
 		enemy->exrev = 100;
-	else if (enemyDat[eDatI].xrev == -99)
+	else if (enemy_dat(eDatI)->xrev == -99)
 		enemy->exrev = 0;
 	else
-		enemy->exrev = enemyDat[eDatI].xrev;
+		enemy->exrev = enemy_dat(eDatI)->xrev;
 
-	if (enemyDat[eDatI].yrev == 0)
+	if (enemy_dat(eDatI)->yrev == 0)
 		enemy->eyrev = 100;
-	else if (enemyDat[eDatI].yrev == -99)
+	else if (enemy_dat(eDatI)->yrev == -99)
 		enemy->eyrev = 0;
 	else
-		enemy->eyrev = enemyDat[eDatI].yrev;
+		enemy->eyrev = enemy_dat(eDatI)->yrev;
 
 	enemy->exca = (enemy->xaccel > 0) ? 1 : -1;
 	enemy->eyca = (enemy->yaccel > 0) ? 1 : -1;
@@ -3892,56 +3810,56 @@ uint JE_makeEnemy( struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 unique
 			enemy->eshotwait[i] = 255;
 	}
 	for (uint i = 0; i < 20; ++i)
-		enemy->egr[i] = enemyDat[eDatI].egraphic[i];
-	enemy->size = enemyDat[eDatI].esize;
+		enemy->egr[i] = enemy_dat(eDatI)->egraphic[i];
+	enemy->size = enemy_dat(eDatI)->esize;
 	enemy->linknum = 0;
-	enemy->edamaged = enemyDat[eDatI].dani < 0;
-	enemy->enemydie = enemyDat[eDatI].eenemydie;
+	enemy->edamaged = enemy_dat(eDatI)->dani < 0;
+	enemy->enemydie = enemy_dat(eDatI)->eenemydie;
 
-	enemy->freq[1-1] = enemyDat[eDatI].freq[1-1];
-	enemy->freq[2-1] = enemyDat[eDatI].freq[2-1];
-	enemy->freq[3-1] = enemyDat[eDatI].freq[3-1];
+	enemy->freq[1-1] = enemy_dat(eDatI)->freq[1-1];
+	enemy->freq[2-1] = enemy_dat(eDatI)->freq[2-1];
+	enemy->freq[3-1] = enemy_dat(eDatI)->freq[3-1];
 
-	enemy->edani   = enemyDat[eDatI].dani;
-	enemy->edgr    = enemyDat[eDatI].dgr;
-	enemy->edlevel = enemyDat[eDatI].dlevel;
+	enemy->edani   = enemy_dat(eDatI)->dani;
+	enemy->edgr    = enemy_dat(eDatI)->dgr;
+	enemy->edlevel = enemy_dat(eDatI)->dlevel;
 
 	enemy->fixedmovey = 0;
 
 	enemy->filter = 0x00;
 
 	int tempValue = 0;
-	if (enemyDat[eDatI].value > 1 && enemyDat[eDatI].value < 10000)
+	if (enemy_dat(eDatI)->value > 1 && enemy_dat(eDatI)->value < 10000)
 	{
 		switch (difficultyLevel)
 		{
 		case -1:
 		case 0:
-			tempValue = enemyDat[eDatI].value * 0.75f;
+			tempValue = enemy_dat(eDatI)->value * 0.75f;
 			break;
 		case 1:
 		case 2:
-			tempValue = enemyDat[eDatI].value;
+			tempValue = enemy_dat(eDatI)->value;
 			break;
 		case 3:
-			tempValue = enemyDat[eDatI].value * 1.125f;
+			tempValue = enemy_dat(eDatI)->value * 1.125f;
 			break;
 		case 4:
-			tempValue = enemyDat[eDatI].value * 1.5f;
+			tempValue = enemy_dat(eDatI)->value * 1.5f;
 			break;
 		case 5:
-			tempValue = enemyDat[eDatI].value * 2;
+			tempValue = enemy_dat(eDatI)->value * 2;
 			break;
 		case 6:
-			tempValue = enemyDat[eDatI].value * 2.5f;
+			tempValue = enemy_dat(eDatI)->value * 2.5f;
 			break;
 		case 7:
 		case 8:
-			tempValue = enemyDat[eDatI].value * 4;
+			tempValue = enemy_dat(eDatI)->value * 4;
 			break;
 		case 9:
 		case 10:
-			tempValue = enemyDat[eDatI].value * 8;
+			tempValue = enemy_dat(eDatI)->value * 8;
 			break;
 		}
 		if (tempValue > 10000)
@@ -3950,47 +3868,47 @@ uint JE_makeEnemy( struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 unique
 	}
 	else
 	{
-		enemy->evalue = enemyDat[eDatI].value;
+		enemy->evalue = enemy_dat(eDatI)->value;
 	}
 
 	int tempArmor = 1;
-	if (enemyDat[eDatI].armor > 0)
+	if (enemy_dat(eDatI)->armor > 0)
 	{
-		if (enemyDat[eDatI].armor != 255)
+		if (enemy_dat(eDatI)->armor != 255)
 		{
 			switch (difficultyLevel)
 			{
 			case -1:
 			case 0:
-				tempArmor = enemyDat[eDatI].armor * 0.5f + 1;
+				tempArmor = enemy_dat(eDatI)->armor * 0.5f + 1;
 				break;
 			case 1:
-				tempArmor = enemyDat[eDatI].armor * 0.75f + 1;
+				tempArmor = enemy_dat(eDatI)->armor * 0.75f + 1;
 				break;
 			case 2:
-				tempArmor = enemyDat[eDatI].armor;
+				tempArmor = enemy_dat(eDatI)->armor;
 				break;
 			case 3:
-				tempArmor = enemyDat[eDatI].armor * 1.2f;
+				tempArmor = enemy_dat(eDatI)->armor * 1.2f;
 				break;
 			case 4:
-				tempArmor = enemyDat[eDatI].armor * 1.5f;
+				tempArmor = enemy_dat(eDatI)->armor * 1.5f;
 				break;
 			case 5:
-				tempArmor = enemyDat[eDatI].armor * 1.8f;
+				tempArmor = enemy_dat(eDatI)->armor * 1.8f;
 				break;
 			case 6:
-				tempArmor = enemyDat[eDatI].armor * 2;
+				tempArmor = enemy_dat(eDatI)->armor * 2;
 				break;
 			case 7:
-				tempArmor = enemyDat[eDatI].armor * 3;
+				tempArmor = enemy_dat(eDatI)->armor * 3;
 				break;
 			case 8:
-				tempArmor = enemyDat[eDatI].armor * 4;
+				tempArmor = enemy_dat(eDatI)->armor * 4;
 				break;
 			case 9:
 			case 10:
-				tempArmor = enemyDat[eDatI].armor * 8;
+				tempArmor = enemy_dat(eDatI)->armor * 8;
 				break;
 			}
 
@@ -4743,8 +4661,8 @@ void JE_eventSystem( void )
 		eventRec[eventLoc-1].eventdat3 = 0;
 		tempDat3 = eventRec[eventLoc-1].eventdat6;
 		eventRec[eventLoc-1].eventdat6 = 0;
-		enemyDat[0].armor = tempDat3;
-		enemyDat[0].egraphic[1-1] = tempDat2;
+		enemyDat0.armor = tempDat3;
+		enemyDat0.egraphic[1-1] = tempDat2;
 		switch (eventRec[eventLoc-1].eventtype - 48)
 		{
 		case 1:
@@ -4881,7 +4799,7 @@ void JE_eventSystem( void )
 		break;
 
 	case 71:
-		if (((((intptr_t)mapYPos - (intptr_t)&megaData1.mainmap) / sizeof(JE_byte *)) * 2) <= (unsigned)eventRec[eventLoc-1].eventdat2)
+		if (((((intptr_t)mapYPos - (intptr_t)&megaData1.mainmap) / sizeof(JE_byte)) * 2) <= (unsigned)eventRec[eventLoc-1].eventdat2)
 		{
 			JE_eventJump(eventRec[eventLoc-1].eventdat);
 		}

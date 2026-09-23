@@ -23,29 +23,25 @@
 
 #include <assert.h>
 #include <ctype.h>
-#include "esp_heap_caps.h"
 
-EXT_RAM_BSS_ATTR Sprite_array sprite_table[SPRITE_TABLES_MAX];
+Sprite_array sprite_table[SPRITE_TABLES_MAX];
 
 Sprite2_array eShapes[6];
 Sprite2_array shapesC1, shapes6, shapes9, shapesW2;
 
 void load_sprites_file( unsigned int table, const char *filename )
 {
-	printf("Loading Sprites: %s\n", filename);
 	free_sprites(table);
 
-	FILE *f = dir_fopen_die(data_dir(), filename, "rb");
+	VFILE *f = dir_fopen_die(data_dir(), filename, "rb");
 
 	load_sprites(table, f);
 
 	efclose(f);
 }
 
-#include "esp_heap_caps.h"
-void load_sprites( unsigned int table, FILE *f )
+void load_sprites( unsigned int table, VFILE *f )
 {
-    printf("Loading Sprites - Table: %d\n", table);
 	free_sprites(table);
 
 	Uint16 temp;
@@ -66,22 +62,12 @@ void load_sprites( unsigned int table, FILE *f )
 		efread(&cur_sprite->height, sizeof(Uint16), 1, f);
 		efread(&cur_sprite->size,   sizeof(Uint16), 1, f);
 
-        cur_sprite->data = (Uint8 *)heap_caps_malloc(cur_sprite->size, MALLOC_CAP_8BIT);
-
-        if (cur_sprite->data == NULL) {
-            printf("Failed to allocate memory for sprite %d\n", i);
-            return;
-        }
-
-
-		efread(cur_sprite->data, sizeof(Uint8), cur_sprite->size, f);
+		cur_sprite->data = vfs_map(f, cur_sprite->size);  // blitted where it lies, in flash
 	}
-    printf("Loading Sprites - Table: %d - Done\n", table);
 }
 
 void free_sprites( unsigned int table )
 {
-	printf("sprite_table: %d count: %d\n", table, sprite_table[table].count);
 	for (unsigned int i = 0; i < sprite_table[table].count; ++i)
 	{
 		Sprite * const cur_sprite = sprite(table, i);
@@ -99,7 +85,7 @@ void free_sprites( unsigned int table )
 }
 
 // does not clip on left or right edges of surface
-void IRAM_ATTR blit_sprite( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index )
+void blit_sprite( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index )
 {
 	if (index >= sprite_table[table].count || !sprite_exists(table, index))
 	{
@@ -159,7 +145,7 @@ void IRAM_ATTR blit_sprite( SDL_Surface *surface, int x, int y, unsigned int tab
 }
 
 // does not clip on left or right edges of surface
-void IRAM_ATTR blit_sprite_blend( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index )
+void blit_sprite_blend( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index )
 {
 	if (index >= sprite_table[table].count || !sprite_exists(table, index))
 	{
@@ -221,7 +207,7 @@ void IRAM_ATTR blit_sprite_blend( SDL_Surface *surface, int x, int y, unsigned i
 // does not clip on left or right edges of surface
 // unsafe because it doesn't check that value won't overflow into hue
 // we can replace it when we know that we don't rely on that 'feature'
-void IRAM_ATTR blit_sprite_hv_unsafe( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value )
+void blit_sprite_hv_unsafe( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value )
 {
 	if (index >= sprite_table[table].count || !sprite_exists(table, index))
 	{
@@ -283,7 +269,7 @@ void IRAM_ATTR blit_sprite_hv_unsafe( SDL_Surface *surface, int x, int y, unsign
 }
 
 // does not clip on left or right edges of surface
-void IRAM_ATTR blit_sprite_hv( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value )
+void blit_sprite_hv( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value )
 {
 	if (index >= sprite_table[table].count || !sprite_exists(table, index))
 	{
@@ -351,7 +337,7 @@ void IRAM_ATTR blit_sprite_hv( SDL_Surface *surface, int x, int y, unsigned int 
 }
 
 // does not clip on left or right edges of surface
-void IRAM_ATTR blit_sprite_hv_blend( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value )
+void blit_sprite_hv_blend( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value )
 {
 	if (index >= sprite_table[table].count || !sprite_exists(table, index))
 	{
@@ -419,7 +405,7 @@ void IRAM_ATTR blit_sprite_hv_blend( SDL_Surface *surface, int x, int y, unsigne
 }
 
 // does not clip on left or right edges of surface
-void IRAM_ATTR blit_sprite_dark( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, bool black )
+void blit_sprite_dark( SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, bool black )
 {
 	if (index >= sprite_table[table].count || !sprite_exists(table, index))
 	{
@@ -484,7 +470,7 @@ void JE_loadCompShapes( Sprite2_array *sprite2s, JE_char s )
 	char buffer[20];
 	snprintf(buffer, sizeof(buffer), "newsh%c.shp", tolower((unsigned char)s));
 
-	FILE *f = dir_fopen_die(data_dir(), buffer, "rb");
+	VFILE *f = dir_fopen_die(data_dir(), buffer, "rb");
 
 	sprite2s->size = ftell_eof(f);
 
@@ -493,26 +479,20 @@ void JE_loadCompShapes( Sprite2_array *sprite2s, JE_char s )
 	efclose(f);
 }
 
-void JE_loadCompShapesB( Sprite2_array *sprite2s, FILE *f )
+void JE_loadCompShapesB( Sprite2_array *sprite2s, VFILE *f )
 {
 	free_sprite2s(sprite2s);
 
-	sprite2s->data = (Uint8 *)heap_caps_malloc(sizeof(Uint8) * sprite2s->size, MALLOC_CAP_8BIT);
-    if (sprite2s->data == NULL) {
-        printf("Failed to allocate memory for sprite2s\n");
-        return;
-    }
-	efread(sprite2s->data, sizeof(Uint8), sprite2s->size, f);
+	sprite2s->data = vfs_map(f, sprite2s->size);  // blitted where it lies, in flash
 }
 
 void free_sprite2s( Sprite2_array *sprite2s )
 {
-	free(sprite2s->data);
 	sprite2s->data = NULL;
 }
 
 // does not clip on left or right edges of surface
-void IRAM_ATTR blit_sprite2( SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index )
+void blit_sprite2( SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index )
 {
 	// assert(surface->BitsPerPixel == 8);
 	Uint8 *             pixels =    (Uint8 *)surface->pixels + (y * surface->pitch) + x;
@@ -548,7 +528,7 @@ void IRAM_ATTR blit_sprite2( SDL_Surface *surface, int x, int y, Sprite2_array s
 }
 
 // does not clip on left or right edges of surface
-void IRAM_ATTR blit_sprite2_blend( SDL_Surface *surface,  int x, int y, Sprite2_array sprite2s, unsigned int index )
+void blit_sprite2_blend( SDL_Surface *surface,  int x, int y, Sprite2_array sprite2s, unsigned int index )
 {
 	// assert(surface->BitsPerPixel == 8);
 	Uint8 *             pixels =    (Uint8 *)surface->pixels + (y * surface->pitch) + x;
@@ -584,7 +564,7 @@ void IRAM_ATTR blit_sprite2_blend( SDL_Surface *surface,  int x, int y, Sprite2_
 }
 
 // does not clip on left or right edges of surface
-void IRAM_ATTR blit_sprite2_darken( SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index )
+void blit_sprite2_darken( SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index )
 {
 	// assert(surface->BitsPerPixel == 8);
 	Uint8 *             pixels =    (Uint8 *)surface->pixels + (y * surface->pitch) + x;
@@ -620,7 +600,7 @@ void IRAM_ATTR blit_sprite2_darken( SDL_Surface *surface, int x, int y, Sprite2_
 }
 
 // does not clip on left or right edges of surface
-void IRAM_ATTR blit_sprite2_filter( SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, Uint8 filter )
+void blit_sprite2_filter( SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, Uint8 filter )
 {
 	// assert(surface->BitsPerPixel == 8);
 	Uint8 *             pixels =    (Uint8 *)surface->pixels + (y * surface->pitch) + x;
@@ -691,7 +671,7 @@ void JE_loadMainShapeTables( const char *shpfile )
 	enum { SHP_NUM = 12 };
 #endif
 
-	FILE *f = dir_fopen_die(data_dir(), shpfile, "rb");
+	VFILE *f = dir_fopen_die(data_dir(), shpfile, "rb");
 
 	JE_word shpNumb;
 	JE_longint shpPos[SHP_NUM + 1]; // +1 for storing file length

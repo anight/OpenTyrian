@@ -24,13 +24,13 @@
 #include "musmast.h"
 #include "sndmast.h"
 
-#include "SDL3/SDL.h"
+#include "SDL.h"
 
 extern Uint32 target, target2;
 
 extern JE_word frameCount, frameCount2, frameCountMax;
 
-extern JE_byte *digiFx[SAMPLE_COUNT];
+extern const JE_byte *digiFx[SAMPLE_COUNT];
 extern JE_word fxSize[SAMPLE_COUNT];
 
 extern JE_word tyrMusicVolume, fxVolume;

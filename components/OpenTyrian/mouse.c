@@ -22,11 +22,8 @@
 #include "video.h"
 #include "vga256d.h"
 
-#if defined(TARGET_GP2X) || defined(TARGET_DINGUX)
+/* picosdl has no mouse: a keyboard, a stick and a pad. */
 bool has_mouse = false;
-#else
-bool has_mouse = true;
-#endif
 bool mouse_has_three_buttons = true;
 
 JE_word lastMouseX, lastMouseY;

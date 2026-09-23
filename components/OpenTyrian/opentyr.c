@@ -46,9 +46,8 @@
 #include "varz.h"
 #include "vga256d.h"
 #include "video.h"
-#include "video_scale.h"
 
-#include "SDL3/SDL.h"
+#include "SDL.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -61,12 +60,11 @@ const char *opentyrian_str = "OpenTyrian",
 
 void opentyrian_menu( void )
 {
+	/* Fullscreen and the scalers are gone: the panel is 320x240 and the game
+	 * is drawn to it pixel for pixel. */
 	typedef enum
 	{
 		MENU_ABOUT = 0,
-		MENU_FULLSCREEN,
-		MENU_SCALER,
-		// MENU_DESTRUCT,
 		MENU_JUKEBOX,
 		MENU_RETURN,
 		MenuOptions_MAX
@@ -75,18 +73,12 @@ void opentyrian_menu( void )
 	static const char *menu_items[] =
 	{
 		"About OpenTyrian",
-		"Toggle Fullscreen",
-		"Scaler: None",
-		// "Play Destruct",
 		"Jukebox",
 		"Return to Main Menu",
 	};
 	bool menu_items_disabled[] =
 	{
 		false,
-		!can_init_any_scaler(false) || !can_init_any_scaler(true),
-		false,
-		// false,
 		false,
 		false,
 	};
@@ -107,8 +99,6 @@ void opentyrian_menu( void )
 
 	MenuOptions sel = (MenuOptions)0;
 
-	uint temp_scaler = scaler;
-
 	bool fade_in = true, quit = false;
 	do
 	{
@@ -117,13 +107,6 @@ void opentyrian_menu( void )
 		for (int i = 0; i < (int)MenuOptions_MAX; i++)
 		{
 			const char *text = menu_items[i];
-			char buffer[100];
-
-			if (i == MENU_SCALER)
-			{
-				snprintf(buffer, sizeof(buffer), "Scaler: %s", scalers[temp_scaler].name);
-				text = buffer;
-			}
 
 			int y = i != MENU_RETURN ? i * 16 + 32 : 118;
 			draw_font_hv(VGAScreen, VGAScreen->w / 2, y, text, normal_font, centered, 15, menu_items_disabled[i] ? -8 : i != sel ? -4 : -2);
@@ -170,35 +153,6 @@ void opentyrian_menu( void )
 				JE_playSampleNum(S_CURSOR);
 				break;
 				
-			case SDL_SCANCODE_LEFT:
-				if (sel == MENU_SCALER)
-				{
-					do
-					{
-						if (temp_scaler == 0)
-							temp_scaler = scalers_count;
-						temp_scaler--;
-					}
-					while (!can_init_scaler(temp_scaler, fullscreen_enabled));
-					
-					JE_playSampleNum(S_CURSOR);
-				}
-				break;
-			case SDL_SCANCODE_RIGHT:
-				if (sel == MENU_SCALER)
-				{
-					do
-					{
-						temp_scaler++;
-						if (temp_scaler == scalers_count)
-							temp_scaler = 0;
-					}
-					while (!can_init_scaler(temp_scaler, fullscreen_enabled));
-					
-					JE_playSampleNum(S_CURSOR);
-				}
-				break;
-				
 			case SDL_SCANCODE_RETURN:
 				switch (sel)
 				{
@@ -210,33 +164,6 @@ void opentyrian_menu( void )
 					memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
 					JE_showVGA();
 					fade_in = true;
-					break;
-					
-				case MENU_FULLSCREEN:
-					JE_playSampleNum(S_SELECT);
-
-					if (!init_scaler(scaler, !fullscreen_enabled) && // try new fullscreen state
-						!init_any_scaler(!fullscreen_enabled) &&     // try any scaler in new fullscreen state
-						!init_scaler(scaler, fullscreen_enabled))    // revert on fail
-					{
-						exit(EXIT_FAILURE);
-					}
-					set_palette(colors, 0, 255); // for switching between 8 bpp scalers
-					break;
-					
-				case MENU_SCALER:
-					JE_playSampleNum(S_SELECT);
-
-					if (scaler != temp_scaler)
-					{
-						if (!init_scaler(temp_scaler, fullscreen_enabled) &&   // try new scaler
-							!init_scaler(temp_scaler, !fullscreen_enabled) &&  // try other fullscreen state
-							!init_scaler(scaler, fullscreen_enabled))          // revert on fail
-						{
-							exit(EXIT_FAILURE);
-						}
-						set_palette(colors, 0, 255); // for switching between 8 bpp scalers
-					}
 					break;
 					
 				case MENU_JUKEBOX:
@@ -273,26 +200,15 @@ void opentyrian_menu( void )
 	} while (!quit);
 }
 
-#include "esp_heap_trace.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_log.h"
-
-static const char *TAG = "opentyr";
-
-#define NUM_RECORDS 100
-static heap_trace_record_t trace_record[NUM_RECORDS]; // This buffer must be in internal RAM
-
-void log_free_dma(void) {
-    size_t free_dma = heap_caps_get_free_size(MALLOC_CAP_DMA);
-    ESP_LOGI(TAG, "Free DMA memory: %d bytes", free_dma);
-}
-
-int main( int argc, char *argv[] )
+/*
+ * The game's main(), under another name: the firmware's own main() has to set
+ * the clock and bring up the console first, and the host build's passes its
+ * arguments straight through.
+ */
+int opentyrian_main( int argc, char *argv[] )
 {
 
 	mt_srand(time(NULL));
-//ESP_ERROR_CHECK( heap_trace_init_standalone(trace_record, NUM_RECORDS) );
 	printf("\nWelcome to... >> %s %s <<\n\n", opentyrian_str, opentyrian_version);
 
 	printf("Copyright (C) 2007-2013 The OpenTyrian Development Team\n\n");
@@ -301,14 +217,7 @@ int main( int argc, char *argv[] )
 	printf("This is free software, and you are welcome to redistribute it\n");
 	printf("under certain conditions.  See the file GPL.txt for details.\n\n");
 
-	// init_keyboard();
-	// vTaskDelay(pdMS_TO_TICKS(4000));
-
-	log_free_dma();
-
 	init_video();
-
-	log_free_dma();
 
 	JE_loadConfiguration();
 
@@ -346,11 +255,7 @@ int main( int argc, char *argv[] )
 	if (!audio_disabled)
 	{
 		printf("initializing SDL audio...\n");
-//ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_LEAKS) );		
-//Leaking!
 		init_audio();
-//ESP_ERROR_CHECK( heap_trace_stop() );
-//heap_trace_dump();
 
 		load_music();
 
@@ -395,12 +300,14 @@ int main( int argc, char *argv[] )
 		if (JE_titleScreen(true))
 			break;  // user quit from title screen
 
+#ifdef WITH_DESTRUCT
 		if (loadDestruct)
 		{
 			JE_destructGame();
 			loadDestruct = false;
 		}
 		else
+#endif
 		{
 			JE_main();
 		}

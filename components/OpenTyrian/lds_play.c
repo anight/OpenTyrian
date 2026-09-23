@@ -71,18 +71,27 @@ static const Uint8 tremtab[128] = {
 
 static const Uint16 maxsound = 0x3f, maxpos = 0xff;
 
-static SoundBank *soundbank = NULL;
+/*
+ * Sized for the largest song in music.mus rather than allocated per song: 44
+ * patches, 44 positions and 7281 pattern words at most, measured over all 41.
+ * A song over any of these is refused, not truncated.
+ */
+#define LDS_MAX_PATCHES   64
+#define LDS_MAX_POSITIONS 64
+#define LDS_MAX_PATTERNS  8192
+
+static SoundBank soundbank[LDS_MAX_PATCHES];
 static Channel channel[9];
-static Position *positions = NULL;
+static Position positions[LDS_MAX_POSITIONS * 9];
 
 static Uint8 fmchip[0xff], jumping, fadeonoff, allvolume, hardfade, tempo_now, pattplay, tempo, regbd, chandelay[9], mode, pattlen;
 static Uint16 posplay, jumppos, speed;
-static Uint16 *patterns = NULL;
+static Uint16 patterns[LDS_MAX_PATTERNS];
 static Uint16 numpatch, numposi, mainvolume;
 
 bool playing, songlooped;
 
-bool lds_load( FILE *f, unsigned int music_offset, unsigned int music_size )
+bool lds_load( VFILE *f, unsigned int music_offset, unsigned int music_size )
 {
 	SoundBank *sb;
 	efseek(f, music_offset, SEEK_SET);
@@ -105,8 +114,11 @@ bool lds_load( FILE *f, unsigned int music_offset, unsigned int music_size )
 	/* load patches */
 	efread(&numpatch, 2, 1, f);
 
-	free(soundbank);
-	soundbank = malloc(sizeof(SoundBank) * numpatch);
+	if (numpatch > LDS_MAX_PATCHES)
+	{
+		fprintf(stderr, "error: song has %u patches, more than %d\n", numpatch, LDS_MAX_PATCHES);
+		return false;
+	}
 
 	for (unsigned int i = 0; i < numpatch; i++)
 	{
@@ -149,8 +161,11 @@ bool lds_load( FILE *f, unsigned int music_offset, unsigned int music_size )
 	/* load positions */
 	efread(&numposi, 2, 1, f);
 	
-	free(positions);
-	positions = malloc(sizeof(Position) * 9 * numposi);
+	if (numposi > LDS_MAX_POSITIONS)
+	{
+		fprintf(stderr, "error: song has %u positions, more than %d\n", numposi, LDS_MAX_POSITIONS);
+		return false;
+	}
 	
 	for (unsigned int i = 0; i < numposi; i++)
 	{
@@ -173,8 +188,11 @@ bool lds_load( FILE *f, unsigned int music_offset, unsigned int music_size )
 	
 	unsigned int remaining = music_size - (eftell(f) - music_offset);
 	
-	free(patterns);
-	patterns = malloc(sizeof(Uint16) * (remaining / 2));
+	if (remaining / 2 > LDS_MAX_PATTERNS)
+	{
+		fprintf(stderr, "error: song has %u pattern words, more than %d\n", remaining / 2, LDS_MAX_PATTERNS);
+		return false;
+	}
 	
 	for (unsigned int i = 0; i < remaining / 2; i++)
 		efread(&patterns[i], 2, 1, f);
@@ -186,14 +204,7 @@ bool lds_load( FILE *f, unsigned int music_offset, unsigned int music_size )
 
 void lds_free( void )
 {
-	free(soundbank);
-	soundbank = NULL;
-	
-	free(positions);
-	positions = NULL;
-	
-	free(patterns);
-	patterns = NULL;
+	playing = false;
 }
 
 void lds_rewind( void )
@@ -295,7 +306,7 @@ int lds_update( void )
 	}
 
 	/* handle notes */
-	if(!tempo_now && positions)
+	if(!tempo_now && numposi)  // a song has been loaded
 	{
 		vbreak = false;
 		for(chan = 0; chan < 9; chan++)

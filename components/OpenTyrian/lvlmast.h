@@ -21,7 +21,10 @@
 
 #include "opentyr.h"
 
-#define EVENT_MAXIMUM 2500
+/* Sized by the converter for the episodes it converted - 1247 for episode 1
+ * alone, against the 2500 the game allowed - since every slot is 12 bytes. */
+#include "tyrian_assets.h"
+#define EVENT_MAXIMUM TY_EVENT_MAXIMUM
 
 #ifdef TYRIAN2000
 #define WEAP_NUM    818

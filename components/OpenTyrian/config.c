@@ -30,13 +30,7 @@
 #include "varz.h"
 #include "vga256d.h"
 #include "video.h"
-#include "video_scale.h"
 
-#include <sys/stat.h>
-
-#ifndef _MSC_VER
-#include <unistd.h>
-#endif
 
 /* Configuration Load/Save handler */
 
@@ -219,76 +213,21 @@ JE_word editorLevel;   /*Initial value 800*/
 
 Config opentyrian_config;  // implicitly initialized
 
+/*
+ * opentyrian.cfg held the fullscreen and scaler settings, neither of which
+ * exists here, and it is parsed by config_file.c, which grows its tables with
+ * realloc.  So there is no opentyrian.cfg: the game's own tyrian.cfg and
+ * tyrian.sav are what carry settings and progress, and they come and go with
+ * the file layer.
+ */
 bool load_opentyrian_config( void )
 {
-	// defaults
-	fullscreen_enabled = false;
-	//set_scaler_by_name("Scale2x");
-	
-	Config *config = &opentyrian_config;
-	
-	FILE *file = dir_fopen_warn(get_user_directory(), "opentyrian.cfg", "r");
-	if (file == NULL)
-		return false;
-	
-	if (!config_parse(config, file))
-	{
-		efclose(file);
-		
-		return false;
-	}
-	
-	ConfigSection *section;
-	
-	section = config_find_section(config, "video", NULL);
-	if (section != NULL)
-	{
-		config_get_bool_option(section, "fullscreen", &fullscreen_enabled);
-		
-		const char *scaler;
-		if (config_get_string_option(section, "scaler", &scaler))
-			set_scaler_by_name(scaler);
-	}
-	
-	efclose(file);
-	
-	return true;
+	return false;
 }
 
 bool save_opentyrian_config( void )
 {
-	Config *config = &opentyrian_config;
-	
-	ConfigSection *section;
-	
-	section = config_find_or_add_section(config, "video", NULL);
-	if (section == NULL)
-		exit(EXIT_FAILURE);  // out of memory
-	
-	config_set_bool_option(section, "fullscreen", fullscreen_enabled, NO_YES);
-
-	config_set_string_option(section, "scaler", scalers[scaler].name);
-	
-	// // SDL_LockDisplay();
-#ifndef TARGET_WIN32
-	mkdir(get_user_directory(), 0700);
-#else
-	mkdir(get_user_directory());
-#endif
-	// // SDL_UnlockDisplay();
-	
-	FILE *file = dir_fopen(get_user_directory(), "opentyrian.cfg", "w+");
-	if (file == NULL)
-		return false;
-	
-	config_write(config, file);
-	
-#ifndef TARGET_WIN32
-//	fsync(fileno(file));
-#endif
-	efclose(file);
-	
-	return true;
+	return false;
 }
 
 static void playeritems_to_pitems( JE_PItemsType pItems, PlayerItems *items, JE_byte initial_episode_num )
@@ -687,37 +626,8 @@ void JE_decryptSaveTemp( void )
 
 const char *get_user_directory( void )
 {
-	return "/sd/tyrian";
-	static char user_dir[500] = "";
-	//strcpy(user_dir, "/sd/tyrian");
-	
-
-	if (strlen(user_dir) == 0)
-	{
-#ifndef TARGET_WIN32
-		char *xdg_config_home = getenv("XDG_CONFIG_HOME");
-		if (xdg_config_home != NULL)
-		{
-			snprintf(user_dir, sizeof(user_dir), "%s/opentyrian", xdg_config_home);
-		}
-		else
-		{
-			char *home = getenv("HOME");
-			if (home != NULL)
-			{
-				snprintf(user_dir, sizeof(user_dir), "%s/.config/opentyrian", home);
-			}
-			else
-			{
-				strcpy(user_dir, ".");
-			}
-		}
-#else
-		strcpy(user_dir, ".");
-#endif
-	}
-	
-	return user_dir;
+	// There is one namespace, the file layer's, and nothing in it is writable.
+	return "";
 }
 
 // for compatibility
@@ -726,7 +636,7 @@ Uint8 inputDevice_ = 0, jConfigure = 0, midiPort = 1;
 
 void JE_loadConfiguration( void )
 {
-	FILE *fi;
+	VFILE *fi;
 	int z;
 	JE_byte *p;
 	int y;
@@ -735,7 +645,6 @@ void JE_loadConfiguration( void )
 	
 	if (fi && ftell_eof(fi) == 20 + sizeof(keySettings))
 	{
-		printf("file opened\n");
 		/* SYN: I've hardcoded the sizes here because the .CFG file format is fixed
 		   anyways, so it's not like they'll change. */
 		background2 = 0;
@@ -895,7 +804,7 @@ void JE_loadConfiguration( void )
 
 void JE_saveConfiguration( void )
 {
-	FILE *f;
+	VFILE *f;
 	JE_byte *p;
 	int z;
 
@@ -963,13 +872,6 @@ void JE_saveConfiguration( void )
 	
 	JE_encryptSaveTemp();
 	
-	// SDL_LockDisplay();
-#ifndef TARGET_WIN32
-	mkdir(get_user_directory(), 0700);
-#else
-	mkdir(get_user_directory());
-#endif
-	// SDL_UnlockDisplay();
 	
 	f = dir_fopen_warn(get_user_directory(), "tyrian.sav", "wb+");
 	if (f != NULL)

@@ -22,24 +22,15 @@
 #include "pcxmast.h"
 #include "picload.h"
 #include "video.h"
-#include "esp_heap_caps.h"
 
 
 #include <string.h>
-
-void check_memory() {
-    size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-    size_t free_dram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-
-    printf("Available PSRAM: %zu bytes\n", free_psram);
-    printf("Available DRAM: %zu bytes\n", free_dram);
-}
 
 void JE_loadPic(SDL_Surface *screen, JE_byte PCXnumber, JE_boolean storepal )
 {
 	PCXnumber--;
 
-	FILE *f = dir_fopen_die(data_dir(), "tyrian.pic", "rb");
+	VFILE *f = dir_fopen_die(data_dir(), "tyrian.pic", "rb");
 
 	static bool first = true;
 	if (first)
@@ -56,43 +47,33 @@ void JE_loadPic(SDL_Surface *screen, JE_byte PCXnumber, JE_boolean storepal )
 		pcxpos[PCX_NUM] = ftell_eof(f);
 	}
 
-	unsigned int size = pcxpos[PCXnumber + 1] - pcxpos[PCXnumber];
-	printf("size: %d\n", size);
-
-	check_memory();
-
-	Uint8 *buffer = (Uint8 *)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-	if (buffer == NULL) {
-		printf("Unable to allocate memory in PSRAM for reading file: %i\n", size);
-		return;
-	} else {
-		printf("Allocated: %i\n", size);
-	}
-	// Uint8 *buffer = (Uint8 *)malloc(size);
-	// if (buffer == NULL) {
-	// 	printf("Unable to allocate memory for reading file: %i\n", size);
-	// 	return;
-	// }
+	/* Decoded as it is read: the RLE stream is walked once, front to back, so
+	 * there is no reason to hold it anywhere first. */
 	efseek(f, pcxpos[PCXnumber], SEEK_SET);
-	efread(buffer, sizeof(Uint8), size, f);
-	efclose(f);
 
-	Uint8 *p = buffer;
 	Uint8 *s; /* screen pointer, 8-bit specific */
 
 	s = (Uint8 *)screen->pixels;
 
 	for (int i = 0; i < 320 * 200; )
 	{
-		if ((*p & 0xc0) == 0xc0)
+		int c = efgetc(f);
+		if (c == EOF)
+			break;
+
+		if ((c & 0xc0) == 0xc0)
 		{
-			i += (*p & 0x3f);
-			memset(s, *(p + 1), (*p & 0x3f));
-			s += (*p & 0x3f); p += 2;
+			int run = c & 0x3f;
+			int value = efgetc(f);
+			if (value == EOF)
+				break;
+			i += run;
+			memset(s, value, run);
+			s += run;
 		} else {
 			i++;
-			*s = *p;
-			s++; p++;
+			*s = c;
+			s++;
 		}
 		if (i && (i % 320 == 0))
 		{
@@ -100,7 +81,7 @@ void JE_loadPic(SDL_Surface *screen, JE_byte PCXnumber, JE_boolean storepal )
 		}
 	}
 
-	free(buffer);
+	efclose(f);
 
 	memcpy(colors, palettes[pcxpal[PCXnumber]], sizeof(colors));
 

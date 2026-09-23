@@ -201,9 +201,9 @@ JE_word totalEnemy;
 JE_word enemyKilled;
 
 /* Shape/Map Data - All in one Segment! */
-EXT_RAM_BSS_ATTR struct JE_MegaDataType1 megaData1;
-EXT_RAM_BSS_ATTR struct JE_MegaDataType2 megaData2;
-EXT_RAM_BSS_ATTR struct JE_MegaDataType3 megaData3;
+struct JE_MegaDataType1 megaData1;
+struct JE_MegaDataType2 megaData2;
+struct JE_MegaDataType3 megaData3;
 
 /* Secret Level Display */
 JE_byte flash;
@@ -213,7 +213,7 @@ JE_byte displayTime;
 /* Demo Stuff */
 bool play_demo = false, record_demo = false, stopped_demo = false;
 Uint8 demo_num = 0;
-FILE *demo_file = NULL;
+VFILE *demo_file = NULL;
 
 Uint8 demo_keys, next_demo_keys;
 Uint16 demo_keys_wait;
@@ -253,7 +253,7 @@ JE_boolean moveTyrianLogoUp;
 JE_boolean skipStarShowVGA;
 
 /*EnemyData*/
-EXT_RAM_BSS_ATTR JE_MultiEnemyType enemy;
+JE_MultiEnemyType enemy;
 JE_EnemyAvailType enemyAvail;  /* values: 0: used, 1: free, 2: secret pick-up */
 JE_word enemyOffset;
 JE_word enemyOnScreen;
@@ -263,7 +263,7 @@ JE_word superEnemy254Jump;
 /*EnemyShotData*/
 JE_boolean fireButtonHeld;
 JE_boolean enemyShotAvail[ENEMY_SHOT_MAX]; /* [1..Enemyshotmax] */
-EXT_RAM_BSS_ATTR EnemyShotType enemyShot[ENEMY_SHOT_MAX]; /* [1..Enemyshotmax]  */
+EnemyShotType enemyShot[ENEMY_SHOT_MAX]; /* [1..Enemyshotmax]  */
 
 /* Player Shot Data */
 JE_byte     zinglonDuration;
@@ -294,7 +294,7 @@ JE_word neat;
 
 
 /*ExplosionData*/
-EXT_RAM_BSS_ATTR explosion_type explosions[MAX_EXPLOSIONS]; /* [1..ExplosionMax] */
+explosion_type explosions[MAX_EXPLOSIONS]; /* [1..ExplosionMax] */
 JE_integer explosionFollowAmountX, explosionFollowAmountY;
 
 /*Repeating Explosions*/
@@ -314,8 +314,8 @@ JE_boolean doNotSaveBackup;
 JE_word x, y;
 JE_integer b;
 
-JE_byte **BKwrap1to, **BKwrap2to, **BKwrap3to,
-        **BKwrap1, **BKwrap2, **BKwrap3;
+const JE_byte *BKwrap1to, *BKwrap2to, *BKwrap3to,
+        *BKwrap1, *BKwrap2, *BKwrap3;
 
 JE_shortint specialWeaponFilter, specialWeaponFreq;
 JE_word     specialWeaponWpn;
@@ -400,7 +400,7 @@ void JE_drawOptions( void )
 
 	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 	{
-		JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
+		const JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
 
 		this_player->sidekick[i].ammo =
 		this_player->sidekick[i].ammo_max = this_option->ammo;
@@ -454,10 +454,6 @@ void JE_tyrianHalt( JE_byte code )
 
 	free_sprite2s(&shapes6);
 
-	for (int i = 0; i < SAMPLE_COUNT; i++)
-	{
-		free(digiFx[i]);
-	}
 
 	if (code != 9)
 	{

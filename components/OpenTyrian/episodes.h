@@ -21,6 +21,7 @@
 
 #include "opentyr.h"
 
+#include "file.h"
 #include "lvlmast.h"
 
 
@@ -61,7 +62,8 @@ typedef struct
 	JE_word cost;
 	JE_word itemgraphic;
 	JE_word poweruse;
-} JE_WeaponPortType[PORT_NUM + 1]; /* [0..portnum] */
+} JE_WeaponPortItem;
+typedef JE_WeaponPortItem JE_WeaponPortType[PORT_NUM + 1]; /* [0..portnum] */
 
 typedef struct
 {
@@ -70,7 +72,8 @@ typedef struct
 	JE_byte     power;
 	JE_shortint speed;
 	JE_word     cost;
-} JE_PowerType[POWER_NUM + 1]; /* [0..powernum] */
+} JE_PowerItem;
+typedef JE_PowerItem JE_PowerType[POWER_NUM + 1]; /* [0..powernum] */
 
 typedef struct
 {
@@ -79,7 +82,8 @@ typedef struct
 	JE_byte pwr;
 	JE_byte stype;
 	JE_word wpn;
-} JE_SpecialType[SPECIAL_NUM + 1]; /* [0..specialnum] */
+} JE_SpecialItem;
+typedef JE_SpecialItem JE_SpecialType[SPECIAL_NUM + 1]; /* [0..specialnum] */
 
 typedef struct
 {
@@ -105,7 +109,8 @@ typedef struct
 	JE_byte mpwr;
 	JE_word itemgraphic;
 	JE_word cost;
-} JE_ShieldType[SHIELD_NUM + 1]; /* [0..shieldnum] */
+} JE_ShieldItem;
+typedef JE_ShieldItem JE_ShieldType[SHIELD_NUM + 1]; /* [0..shieldnum] */
 
 typedef struct
 {
@@ -117,7 +122,8 @@ typedef struct
 	JE_byte     dmg;
 	JE_word     cost;
 	JE_byte     bigshipgraphic;
-} JE_ShipType[SHIP_NUM + 1]; /* [0..shipnum] */
+} JE_ShipItem;
+typedef JE_ShipItem JE_ShipType[SHIP_NUM + 1]; /* [0..shipnum] */
 
 /* EnemyData */
 typedef struct
@@ -149,23 +155,64 @@ typedef struct
 	JE_word     elaunchtype;
 	JE_integer  value;
 	JE_word     eenemydie;
-} JE_EnemyDatType[ENEMY_NUM + 1]; /* [0..enemynum] */
+} JE_EnemyDatItem;
+typedef JE_EnemyDatItem JE_EnemyDatType[ENEMY_NUM + 1]; /* [0..enemynum] */
 
-EXT_RAM_BSS_ATTR extern JE_WeaponPortType weaponPort;
-EXT_RAM_BSS_ATTR extern JE_WeaponType weapons[WEAP_NUM + 1];
-extern JE_PowerType powerSys;
-extern JE_ShipType ships;
-EXT_RAM_BSS_ATTR extern JE_OptionType options[OPTION_NUM + 1];
-extern JE_ShieldType shields;
-extern JE_SpecialType special;
-EXT_RAM_BSS_ATTR extern JE_EnemyDatType enemyDat;
+/*
+ * The item and enemy definitions, one set for episodes 1 to 3 and another for
+ * episode 4.
+ *
+ * Nothing writes them once they are loaded, so they are not loaded: the build
+ * runs JE_readItemDat() on the host and compiles what it read into flash
+ * (tools/assets/gamedata_gen.c), and JE_initEpisode() points these at the set
+ * the episode uses.  140 KB that would otherwise be RAM.
+ */
+typedef struct
+{
+	JE_WeaponType     weapons[WEAP_NUM + 1];
+	JE_WeaponPortType weaponPort;
+	JE_SpecialType    special;
+	JE_PowerType      powerSys;
+	JE_ShipType       ships;
+	JE_OptionType     options[OPTION_NUM + 1];
+	JE_ShieldType     shields;
+	JE_EnemyDatType   enemyDat;
+} JE_ItemTables;
+
+extern const JE_WeaponPortItem *weaponPort;
+extern const JE_WeaponType     *weapons;
+extern const JE_PowerItem      *powerSys;
+extern const JE_ShipItem       *ships;
+extern const JE_OptionType     *options;
+extern const JE_ShieldItem     *shields;
+extern const JE_SpecialItem    *special;
+
+/*
+ * enemyDat[0] is the exception.  The events that make an enemy to order write
+ * its armour and graphic into entry 0 and then create it from there, so that
+ * one entry is kept in RAM and reads go through here to find it.
+ */
+extern JE_EnemyDatItem enemyDat0;
+extern const JE_EnemyDatItem *enemyDatTable;
+
+static inline const JE_EnemyDatItem *enemy_dat( unsigned int i )
+{
+	return i == 0 ? &enemyDat0 : &enemyDatTable[i];
+}
+
+/* Reads an episode's item data from f, positioned at its start, into t: the
+ * game's loader, which now runs on the host at build time. */
+void JE_readItemDat( VFILE *f, JE_ItemTables *t, JE_byte episode );
+
+/* The sets tools/assets/gamedata_gen.c compiled: [0] for episodes 1 to 3,
+ * [1] for episode 4, NULL where the episode was not converted. */
+extern const JE_ItemTables *const ty_items[2];
 
 extern JE_byte initial_episode_num, episodeNum;
 extern JE_boolean episodeAvail[EPISODE_MAX];
 
 extern char episode_file[22], cube_file[22];
 
-extern JE_longint episode1DataLoc;
 extern JE_boolean bonusLevel;
 extern JE_boolean jumpBackToEpisode1;
 

@@ -22,19 +22,19 @@
 #include "opentyr.h"
 #include "opl.h"
 
-#include "SDL3/SDL.h"
+#include "SDL.h"
 
 #define SFX_CHANNELS 8
 
-#if defined(TARGET_GP2X) || defined(TARGET_DINGUX)
-#define OUTPUT_QUALITY 2  // 22 kHz
-#else
-#define OUTPUT_QUALITY 4  // 44 kHz
-#endif
+/*
+ * 22050 Hz: the sound effects are 11025 Hz, so each is held for exactly two
+ * frames, and the OPL has nothing above 11 kHz for a higher rate to carry.
+ * It halves the mixer's work against 44100 on the core that does nothing else.
+ */
+#define OUTPUT_QUALITY 2
+#define AUDIO_RATE (11025 * OUTPUT_QUALITY)
 
 #define SAMPLE_SCALING OUTPUT_QUALITY
-#define SAMPLE_TYPE Bit16s
-#define BYTES_PER_SAMPLE 2
 
 extern float music_volume, sample_volume;
 
@@ -53,7 +53,7 @@ void fade_song( void );
 
 void set_volume( unsigned int music, unsigned int sample );
 
-void JE_multiSamplePlay(JE_byte *buffer, JE_word size, JE_byte chan, JE_byte vol);
+void JE_multiSamplePlay( const JE_byte *buffer, JE_word size, JE_byte chan, JE_byte vol );
 
 #endif /* LOUDNESS_H */
 

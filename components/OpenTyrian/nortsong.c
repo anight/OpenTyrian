@@ -27,7 +27,7 @@
 #include "sndmast.h"
 #include "vga256d.h"
 
-#include "SDL3/SDL.h"
+#include "SDL.h"
 
 Uint32 target, target2;
 
@@ -35,7 +35,7 @@ JE_boolean notYetLoadedSound = true;
 
 JE_word frameCount, frameCount2, frameCountMax;
 
-JE_byte *digiFx[SAMPLE_COUNT] = { NULL }; /* [1..soundnum + 9] */
+const JE_byte *digiFx[SAMPLE_COUNT] = { NULL }; /* [1..soundnum + 9] */
 JE_word fxSize[SAMPLE_COUNT]; /* [1..soundnum + 9] */
 
 JE_word tyrMusicVolume, fxVolume;
@@ -101,15 +101,16 @@ void wait_delayorinput( JE_boolean keyboard, JE_boolean mouse, JE_boolean joysti
 
 void JE_loadSndFile( const char *effects_sndfile, const char *voices_sndfile )
 {
-	notYetLoadedSound = false;
-	return;
 	JE_byte y, z;
 	JE_word x;
 	JE_longint templ;
 	JE_longint sndPos[2][SAMPLE_COUNT + 1];
 	JE_word sndNum;
 
-	FILE *fi;	
+	/* The samples are not loaded: each is mapped where it lies in flash, and
+	 * the mixer reads it from there. */
+	VFILE *fi;
+	
 	/* SYN: Loading offsets into TYRIAN.SND */
 	fi = dir_fopen_die(data_dir(), effects_sndfile, "rb");
 	efread(&sndNum, sizeof(sndNum), 1, fi);
@@ -118,16 +119,13 @@ void JE_loadSndFile( const char *effects_sndfile, const char *voices_sndfile )
 	{
 		efread(&sndPos[0][x], sizeof(sndPos[0][x]), 1, fi);
 	}
-	efseek(fi, 0, SEEK_END);
-	sndPos[0][sndNum] = eftell(fi); /* Store file size */
+	sndPos[0][sndNum] = ftell_eof(fi); /* Store file size */
 
 	for (z = 0; z < sndNum; z++)
 	{
 		efseek(fi, sndPos[0][z], SEEK_SET);
 		fxSize[z] = (sndPos[0][z+1] - sndPos[0][z]); /* Store sample sizes */
-		free(digiFx[z]);
-		digiFx[z] = malloc(fxSize[z]);
-		efread(digiFx[z], 1, fxSize[z], fi); /* JE: Load sample to buffer */
+		digiFx[z] = vfs_map(fi, fxSize[z]);
 	}
 
 	efclose(fi);
@@ -141,8 +139,7 @@ void JE_loadSndFile( const char *effects_sndfile, const char *voices_sndfile )
 	{
 		efread(&sndPos[1][x], sizeof(sndPos[1][x]), 1, fi);
 	}
-	efseek(fi, 0, SEEK_END);
-	sndPos[1][sndNum] = eftell(fi); /* Store file size */
+	sndPos[1][sndNum] = ftell_eof(fi); /* Store file size */
 
 	z = SAMPLE_COUNT - 9;
 
@@ -153,13 +150,11 @@ void JE_loadSndFile( const char *effects_sndfile, const char *voices_sndfile )
 		templ = (sndPos[1][y+1] - sndPos[1][y]) - 100; /* SYN: I'm not entirely sure what's going on here. */
 		if (templ < 1) templ = 1;
 		fxSize[z + y] = templ; /* Store sample sizes */
-		digiFx[z + y] = malloc(fxSize[z + y]);
-		efread(digiFx[z + y], 1, fxSize[z + y], fi); /* JE: Load sample to buffer */
+		digiFx[z + y] = vfs_map(fi, fxSize[z + y]);
 	}
 	efclose(fi);
 
 	notYetLoadedSound = false;
-
 }
 
 void JE_playSampleNum( JE_byte samplenum )

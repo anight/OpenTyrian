@@ -21,6 +21,7 @@
 
 #include "opentyr.h"
 #include "file.h"
+#include "menus.h"
 
 #include <stdio.h>
 
@@ -59,32 +60,82 @@ extern JE_byte helpBoxColor, helpBoxBrightness, helpBoxShadeType;
 #define HELPTEXT_SHIPINFO_COUNT 13
 #endif
 
-EXT_RAM_BSS_ATTR extern char helpTxt[39][231];
-EXT_RAM_BSS_ATTR extern char pName[21][16];
-EXT_RAM_BSS_ATTR extern char miscText[HELPTEXT_MISCTEXT_COUNT][42];
-EXT_RAM_BSS_ATTR extern char miscTextB[HELPTEXT_MISCTEXTB_COUNT][HELPTEXT_MISCTEXTB_SIZE];
-EXT_RAM_BSS_ATTR extern char keyName[8][18];
-EXT_RAM_BSS_ATTR extern char menuText[7][HELPTEXT_MENUTEXT_SIZE];
-EXT_RAM_BSS_ATTR extern char outputs[9][31];
-EXT_RAM_BSS_ATTR extern char topicName[6][21];
-EXT_RAM_BSS_ATTR extern char mainMenuHelp[HELPTEXT_MAINMENUHELP_COUNT][66];
-EXT_RAM_BSS_ATTR extern char inGameText[6][21];
-EXT_RAM_BSS_ATTR extern char detailLevel[6][13];
-EXT_RAM_BSS_ATTR extern char gameSpeedText[5][13];
-EXT_RAM_BSS_ATTR extern char inputDevices[3][13];
-EXT_RAM_BSS_ATTR extern char networkText[HELPTEXT_NETWORKTEXT_COUNT][HELPTEXT_NETWORKTEXT_SIZE];
-EXT_RAM_BSS_ATTR extern char difficultyNameB[11][21];
-EXT_RAM_BSS_ATTR extern char joyButtonNames[5][21];
-EXT_RAM_BSS_ATTR extern char superShips[HELPTEXT_SUPERSHIPS_COUNT][26];
-EXT_RAM_BSS_ATTR extern char specialName[HELPTEXT_SPECIALNAME_COUNT][10];
-EXT_RAM_BSS_ATTR extern char destructHelp[25][22];
-EXT_RAM_BSS_ATTR extern char weaponNames[17][17];
-EXT_RAM_BSS_ATTR extern char destructModeName[DESTRUCT_MODES][13];
-EXT_RAM_BSS_ATTR extern char shipInfo[HELPTEXT_SHIPINFO_COUNT][2][256];
-EXT_RAM_BSS_ATTR extern char menuInt[MENU_MAX+1][11][18];
+/*
+ * The game's text, from tyrian.hdt.  Nearly all of it is read and never
+ * written, so it is not loaded: tools/assets/gamedata_gen.c runs
+ * JE_readHelpText() on the host and compiles the result into flash as
+ * ty_help, and the names the game uses are that, read-only.  24 KB less RAM.
+ *
+ * menuInt and menuText are the exceptions - the level and item menus rewrite
+ * rows of menuInt, and the title screen puts OpenTyrian into menuText - so
+ * those two are RAM, initialised from the flash copy by JE_loadHelpText().
+ */
+typedef struct
+{
+	char helpTxt[39][231];
+	char pName[21][16];
+	char miscText[HELPTEXT_MISCTEXT_COUNT][42];
+	char miscTextB[HELPTEXT_MISCTEXTB_COUNT][HELPTEXT_MISCTEXTB_SIZE];
+	char menuText[7][HELPTEXT_MENUTEXT_SIZE];
+	char outputs[9][31];
+	char topicName[6][21];
+	char mainMenuHelp[HELPTEXT_MAINMENUHELP_COUNT][66];
+	char inGameText[6][21];
+	char detailLevel[6][13];
+	char gameSpeedText[5][13];
+	char episode_name[6][31];
+	char difficulty_name[7][21];
+	char gameplay_name[GAMEPLAY_NAME_COUNT][26];
+	char inputDevices[3][13];
+	char networkText[HELPTEXT_NETWORKTEXT_COUNT][HELPTEXT_NETWORKTEXT_SIZE];
+	char difficultyNameB[11][21];
+	char joyButtonNames[5][21];
+	char superShips[HELPTEXT_SUPERSHIPS_COUNT][26];
+	char specialName[HELPTEXT_SPECIALNAME_COUNT][10];
+	char destructHelp[25][22];
+	char weaponNames[17][17];
+	char destructModeName[DESTRUCT_MODES][13];
+	char shipInfo[HELPTEXT_SHIPINFO_COUNT][2][256];
+	char menuInt[MENU_MAX+1][11][18];
+} JE_HelpText;
 
-void read_encrypted_pascal_string( char *s, int size, FILE *f );
-void skip_pascal_string( FILE *f );
+extern const JE_HelpText ty_help;
+
+/* The loader names the fields themselves, so it asks not to have these. */
+#ifndef HELPTEXT_NO_ALIASES
+#define helpTxt          (ty_help.helpTxt)
+#define pName            (ty_help.pName)
+#define miscText         (ty_help.miscText)
+#define miscTextB        (ty_help.miscTextB)
+#define outputs          (ty_help.outputs)
+#define topicName        (ty_help.topicName)
+#define mainMenuHelp     (ty_help.mainMenuHelp)
+#define inGameText       (ty_help.inGameText)
+#define detailLevel      (ty_help.detailLevel)
+#define gameSpeedText    (ty_help.gameSpeedText)
+#define episode_name     (ty_help.episode_name)
+#define difficulty_name  (ty_help.difficulty_name)
+#define gameplay_name    (ty_help.gameplay_name)
+#define inputDevices     (ty_help.inputDevices)
+#define networkText      (ty_help.networkText)
+#define difficultyNameB  (ty_help.difficultyNameB)
+#define joyButtonNames   (ty_help.joyButtonNames)
+#define superShips       (ty_help.superShips)
+#define specialName      (ty_help.specialName)
+#define destructHelp     (ty_help.destructHelp)
+#define weaponNames      (ty_help.weaponNames)
+#define destructModeName (ty_help.destructModeName)
+#define shipInfo         (ty_help.shipInfo)
+#endif
+
+extern char menuText[7][HELPTEXT_MENUTEXT_SIZE];
+extern char menuInt[MENU_MAX+1][11][18];
+
+/* The game's loader, filling h: run on the host at build time. */
+void JE_readHelpText( VFILE *f, JE_HelpText *h );
+
+void read_encrypted_pascal_string( char *s, int size, VFILE *f );
+void skip_pascal_string( VFILE *f );
 
 void JE_helpBox( SDL_Surface *screen, int x, int y, const char *message, unsigned int boxwidth );
 void JE_HBox( SDL_Surface *screen, int x, int y, unsigned int  messagenum, unsigned int boxwidth );

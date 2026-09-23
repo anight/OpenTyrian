@@ -82,7 +82,7 @@ static JE_byte planetDots[5]; /* [1..5] */
 static JE_integer planetDotX[5][10], planetDotY[5][10]; /* [1..5, 1..10] */
 static PlayerItems old_items[2];  // TODO: should not be global if possible
 
-EXT_RAM_BSS_ATTR struct cube_struct cube[4];
+struct cube_struct cube[4];
 
 static const JE_MenuChoiceType menuChoicesDefault = { 7, 9, 8, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5 };
 static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0 };
@@ -396,7 +396,7 @@ void JE_itemScreen( void )
 				if (x < 10) /* 10 = reset to defaults, 11 = done */
 				{
 					temp2 = (x == curSel[curMenu]) ? 252 : 250;
-					JE_textShade(VGAScreen, 236, 38 + (x - 2)*12, SDL_GetKeyName(keySettings[x-2]), temp2 / 16, temp2 % 16 - 8, DARKEN);
+					JE_textShade(VGAScreen, 236, 38 + (x - 2)*12, SDL_GetScancodeName(keySettings[x-2]), temp2 / 16, temp2 % 16 - 8, DARKEN);
 				}
 			}
 
@@ -1623,7 +1623,7 @@ void draw_ship_illustration( void )
 	{
 		assert(player[0].items.ship > 0);
 
-		const int sprite_id = (player[0].items.ship < COUNTOF(ships))  // shipedit ships get a default
+		const int sprite_id = (player[0].items.ship < (SHIP_NUM + 1))  // shipedit ships get a default
 		                      ? ships[player[0].items.ship].bigshipgraphic - 1
 		                      : 31;
 
@@ -1721,7 +1721,7 @@ void load_cubes( void )
 
 bool load_cube( int cube_slot, int cube_index )
 {
-	FILE *f = dir_fopen_die(data_dir(), cube_file, "rb");
+	VFILE *f = dir_fopen_die(data_dir(), cube_file, "rb");
 
 	char buf[256];
 
@@ -1755,7 +1755,7 @@ bool load_cube( int cube_slot, int cube_index )
 		read_encrypted_pascal_string(buf, sizeof(buf), f);
 
 		// end of data
-		if (feof(f) || buf[0] == '*')
+		if (efeof(f) || buf[0] == '*')
 			break;
 
 		// new paragraph
@@ -1893,7 +1893,7 @@ void JE_drawMenuHeader( void )
 void JE_drawMenuChoices( void )
 {
 	JE_byte x;
-	char *str;
+	char str[1 + sizeof(menuInt[0][0])];  // a '~' to highlight, then the item
 
 	for (x = 2; x <= menuChoices[curMenu]; x++)
 	{
@@ -1924,16 +1924,8 @@ void JE_drawMenuChoices( void )
 			tempY -= 16;
 		}
 
-		str = (char *)malloc(strlen(menuInt[curMenu + 1][x-1])+2);
-		if (curSel[curMenu] == x)
-		{
-			str[0] = '~';
-			strcpy(str+1, menuInt[curMenu + 1][x-1]);
-		} else {
-			strcpy(str, menuInt[curMenu + 1][x-1]);
-		}
+		snprintf(str, sizeof(str), "%s%s", curSel[curMenu] == x ? "~" : "", menuInt[curMenu + 1][x-1]);
 		JE_dString(VGAScreen, 166, tempY, str, SMALL_FONT_SHAPES);
-		free(str);
 
 		if (keyboardUsed && curSel[curMenu] == x)
 		{
@@ -2664,7 +2656,7 @@ void JE_menuFunction( JE_byte select )
 		{
 			temp2 = 254;
 			int tempY = 38 + (curSelect - 2) * 12;
-			JE_textShade(VGAScreen, 236, tempY, SDL_GetKeyName(keySettings[curSelect-2]), (temp2 / 16), (temp2 % 16) - 8, DARKEN);
+			JE_textShade(VGAScreen, 236, tempY, SDL_GetScancodeName(keySettings[curSelect-2]), (temp2 / 16), (temp2 % 16) - 8, DARKEN);
 			JE_showVGA();
 
 			wait_noinput(true, true, true);

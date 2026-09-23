@@ -75,7 +75,7 @@ void JE_decryptShips( void )
 
 void JE_loadExtraShapes( void )
 {
-	FILE *f = dir_fopen(get_user_directory(), "newsh$.shp", "rb");
+	VFILE *f = dir_fopen(get_user_directory(), "newsh$.shp", "rb");
 	
 	if (f)
 	{
